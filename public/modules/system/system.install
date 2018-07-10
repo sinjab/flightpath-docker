@@ -1,0 +1,852 @@
+<?php
+/**
+ * @file
+ * The install file for the System module
+ * 
+ * This file is responsible for installing all of the required tables
+ * for FlightPath.
+*/
+
+
+
+/**
+ * Implementation of hook_enable.
+ * 
+ * This is meant to be called during initial installation.  We will make all of the
+ * database changes we need to make in order to have FlightPath up and running.
+ */
+function system_enable() {
+  
+  // Set up our default roles
+  db_query("INSERT INTO roles (rid, name)
+            VALUES (1, 'anonymous user'), 
+                   (2, 'authenticated user')");
+   
+  // Add in the anonymous user into the users table (uid = 0)
+  db_query("INSERT INTO users (user_id, cwid, user_name) VALUES (0, 0, 'anonymous')");
+
+  // Let's figure out what the current schema value is for this system module...
+  $info_contents = file_get_contents("modules/system/system.info");    
+  // From the info_contents variable, split up and place into an array.
+  $info_details_array = array();
+  $lines = explode("\n", $info_contents);
+  foreach ($lines as $line) {
+    if (trim($line) == "") continue;
+    $temp = explode("=", trim($line));
+    $info_details_array[trim($temp[0])] = trim(substr($line, strlen($temp[0]) + 1)); 
+  }  
+
+  // Set up the modules table-- add the system module first.    
+  db_query("INSERT INTO modules (path, name, version, enabled, weight, type, `schema`)
+            VALUES ('modules/system', 'system', 'core', 1, '-999', 'module', '?') ", $info_details_array["schema"]);
+    
+
+  // Let's perform installations on the other modules we want enabled by default.
+  $modules = array("admin", "advise", "blocks", "comments", "student_search", "update_status", "content", "announcements", "tinymce", "course_search", "blank_degrees", "user", "batch");
+  foreach ($modules as $module) {
+    system_enable_module(array("module" => $module, "path" => "modules/$module", "version" => "core"));
+  }
+
+  // Set up some blocks for the system module by default.
+  db_query("INSERT INTO blocks (section, region, module, delta, weight)
+            VALUES ('system_main', 'right_col', 'system', 'tools', 1),
+                   ('system_main', 'right_col', 'system', 'admin_tools', 2), 
+                   ('system_main', 'left_col', 'announcements', 'primary', 0), 
+                   ('system_login', 'left_col', 'blocks', 'block_1', 0), 
+                   ('system_login', 'right_col', 'system', 'login_form', 0),
+                   ('system_login', 'top', 'blocks', 'block_2', 0)
+                   
+                   ");
+
+
+  // Set up some basic permissions for authenticated user.
+  db_query("INSERT INTO role_permissions (rid, perm)
+            VALUES 
+              (2, 'access_logged_in_content'),
+              (2, 'view_comments') ");
+
+  
+  // Add some default variable values, to make things a little easier on first-run.
+  variable_set("earliest_catalog_year", date("Y"));
+  variable_set("current_catalog_year", date("Y"));
+  variable_set("current_draft_catalog_year", date("Y"));
+  
+  
+  // Do we have "clean URLs" enabled?
+  $test = system_check_clean_urls();
+  variable_set("clean_urls", $test);
+  
+}
+
+
+
+function system_update($old_schema, $new_schema) {
+  if ($old_schema <= 1) {
+    // Add column to the faculty table
+    db_query("ALTER TABLE faculty 
+              ADD COLUMN department_code varchar(10) NOT NULL AFTER college, 
+              ADD INDEX (department_code)");
+  }
+  
+  
+  if ($old_schema < 3) {
+    // Add an index to the advising_comments table for access_type
+    db_query("ALTER TABLE advising_comments
+              ADD INDEX (access_type) ");  
+  }
+  
+  
+  if ($old_schema < 4) {
+    // Add college-related tables
+    db_query("CREATE TABLE `colleges` (
+                `college_code` varchar(10) NOT NULL,
+                `title` varchar(255) NOT NULL,
+                PRIMARY KEY (`college_code`)
+                ) ");
+    
+    db_query("CREATE TABLE `degree_college` (
+                `major_code` varchar(20) NOT NULL,
+                `college_code` varchar(10) NOT NULL,
+                PRIMARY KEY (`major_code`),
+                KEY `college_code` (`college_code`)
+              ) ");    
+    
+    fp_add_message(t("Added college-related tables to database."));
+  }
+  
+  if ($old_schema < 5) {
+    // Update hour fields to be decimal type.
+    db_query("ALTER TABLE `advised_courses` MODIFY `var_hours` DECIMAL(8,4) NOT NULL");
+    db_query("ALTER TABLE `student_courses` MODIFY `hours_awarded` DECIMAL(8,4) NOT NULL");
+    db_query("ALTER TABLE `student_substitutions` MODIFY `sub_hours` DECIMAL(8,4) NOT NULL");
+    
+    db_query("ALTER TABLE `courses` MODIFY `min_hours` DECIMAL(8,4) NOT NULL");
+    db_query("ALTER TABLE `courses` MODIFY `max_hours` DECIMAL(8,4) NOT NULL");
+    db_query("ALTER TABLE `courses` MODIFY `repeat_hours` DECIMAL(8,4) NOT NULL");
+    db_query("ALTER TABLE `draft_courses` MODIFY `min_hours` DECIMAL(8,4) NOT NULL");
+    db_query("ALTER TABLE `draft_courses` MODIFY `max_hours` DECIMAL(8,4) NOT NULL");
+    db_query("ALTER TABLE `draft_courses` MODIFY `repeat_hours` DECIMAL(8,4) NOT NULL");    
+    
+    db_query("ALTER TABLE `degree_requirements` MODIFY `group_hours_required` DECIMAL(8,4) NOT NULL");    
+    db_query("ALTER TABLE `draft_degree_requirements` MODIFY `group_hours_required` DECIMAL(8,4) NOT NULL");    
+    
+    db_query("ALTER TABLE `student_transfer_courses` MODIFY `hours_awarded` DECIMAL(8,4) NOT NULL");    
+    db_query("ALTER TABLE `transfer_courses` MODIFY `min_hours` DECIMAL(8,4) NOT NULL");    
+    db_query("ALTER TABLE `transfer_courses` MODIFY `max_hours` DECIMAL(8,4) NOT NULL");    
+
+    
+    // Also, expand the varchar fields for students table...
+    db_query("ALTER TABLE `students` MODIFY `cumulative_hours` varchar(10) NOT NULL");    
+    db_query("ALTER TABLE `students` MODIFY `gpa` varchar(10) NOT NULL");    
+    
+    
+    fp_add_message(t("Updated database fields to allow for decimal hours."));
+  }
+  
+  
+  if ($old_schema < 6) {
+    // Add level_code field to relavant tables.
+    db_query("alter table `student_courses` add column `level_code` VARCHAR(10) NOT NULL");
+    db_query("alter table `student_transfer_courses` add column `level_code` VARCHAR(10) NOT NULL");
+    
+    // Also add indexes for these fields.
+    db_query("alter table `student_courses` add index `level_code` (level_code)");
+    db_query("alter table `student_transfer_courses` add index `level_code` (level_code)");
+    
+    
+    fp_add_message(t("Updated database fields to allow for level codes per course."));
+  }
+  
+  
+  
+  
+}
+
+
+
+/**
+ * Implementation of hook_install.
+ * 
+ * This will create all of our tables.
+ */ 
+function system_install() {
+  
+  // Since this will ONLY be called during initial install, we do not
+  // need to first check for existing tables; it is assumed that the database
+  // is empty.
+  
+  // Therefore, let's place all of our create table statements in one query, for
+  // simplicity.
+    
+  $q = "
+        CREATE TABLE `advised_courses` (
+          `id` int(11) NOT NULL AUTO_INCREMENT,
+          `advising_session_id` int(11) NOT NULL DEFAULT '0',
+          `course_id` int(11) NOT NULL DEFAULT '0',
+          `entry_value` varchar(20) NOT NULL DEFAULT '',
+          `semester_num` int(11) NOT NULL DEFAULT '0',
+          `group_id` int(11) NOT NULL DEFAULT '0',
+          `var_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+          `term_id` varchar(20) NOT NULL DEFAULT '',
+          PRIMARY KEY (`id`),
+          KEY `advid` (`advising_session_id`),
+          KEY `course_id` (`course_id`),
+          KEY `ev` (`entry_value`)
+        );   ";
+  
+  db_query($q);
+
+  $q = "  
+  
+CREATE TABLE `advising_comments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '0',
+  `faculty_id` varchar(30) NOT NULL DEFAULT '0',
+  `term_id` varchar(20) NOT NULL DEFAULT '',
+  `comment` text,
+  `posted` int(10) unsigned NOT NULL DEFAULT '0',
+  `access_type` varchar(20) NOT NULL DEFAULT '',
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `student_id` (`student_id`),
+  KEY `delete_flag` (`delete_flag`), 
+  KEY `access_type` (`access_type`)
+);
+  ";
+
+  db_query($q);
+
+$q = "
+CREATE TABLE `advising_sessions` (
+  `advising_session_id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '0',
+  `faculty_id` varchar(30) NOT NULL DEFAULT '0',
+  `term_id` varchar(20) NOT NULL DEFAULT '',
+  `degree_id` int(11) NOT NULL DEFAULT '0',
+  `major_code` varchar(20) NOT NULL DEFAULT '',
+  `track_code` varchar(20) NOT NULL DEFAULT '',
+  `catalog_year` int(11) NOT NULL DEFAULT '0',
+  `posted` int(10) unsigned NOT NULL DEFAULT '0',
+  `is_whatif` tinyint(4) NOT NULL DEFAULT '0',
+  `is_draft` tinyint(4) NOT NULL DEFAULT '0',
+  `is_empty` tinyint(4) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`advising_session_id`),
+  KEY `sid` (`student_id`),
+  KEY `termid` (`term_id`)
+);  ";
+db_query($q);
+
+$q = "
+
+CREATE TABLE `advisor_student` (
+  `faculty_id` varchar(30) NOT NULL DEFAULT '0',
+  `student_id` varchar(30) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`faculty_id`,`student_id`)
+); ";
+
+db_query($q);
+
+$q = "
+CREATE TABLE `blocks` (
+  `bid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `section` varchar(255) NOT NULL DEFAULT '',
+  `region` varchar(255) NOT NULL DEFAULT '',
+  `module` varchar(255) NOT NULL DEFAULT '',
+  `delta` varchar(255) NOT NULL DEFAULT '',
+  `weight` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`bid`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `courses` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `course_id` int(11) NOT NULL DEFAULT '0',
+  `subject_id` varchar(10) NOT NULL DEFAULT '',
+  `course_num` varchar(10) NOT NULL DEFAULT '',
+  `catalog_year` int(11) NOT NULL DEFAULT '0',
+  `title` text,
+  `description` text,
+  `min_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `max_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `repeat_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `exclude` tinyint(4) NOT NULL DEFAULT '0',
+  `data_entry_comment` text,
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `course_id` (`course_id`),
+  KEY `subject_id` (`subject_id`),
+  KEY `course_num` (`course_num`),
+  KEY `catalog_year` (`catalog_year`)
+); ";
+db_query($q);
+
+
+db_query("CREATE TABLE `colleges` (
+            `college_code` varchar(10) NOT NULL,
+            `title` varchar(255) NOT NULL DEFAULT '',
+            PRIMARY KEY (`college_code`)
+            ) ");
+
+db_query("CREATE TABLE `degree_college` (
+            `major_code` varchar(20) NOT NULL DEFAULT '',
+            `college_code` varchar(10) NOT NULL DEFAULT '',
+            PRIMARY KEY (`major_code`),
+            KEY `college_code` (`college_code`)
+          ) "); 
+
+
+$q = "
+CREATE TABLE `degree_requirements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `degree_id` int(11) NOT NULL DEFAULT '0',
+  `semester_num` int(11) NOT NULL DEFAULT '0',
+  `group_id` int(11) NOT NULL DEFAULT '0',
+  `group_requirement_type` varchar(10) NOT NULL DEFAULT '',
+  `group_hours_required` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `group_min_grade` varchar(10) NOT NULL DEFAULT '',
+  `course_id` int(11) NOT NULL DEFAULT '0',
+  `course_min_grade` varchar(10) NOT NULL DEFAULT '',
+  `course_requirement_type` varchar(10) NOT NULL DEFAULT '',
+  `data_entry_value` varchar(50) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `degree_id` (`degree_id`),
+  KEY `group_id` (`group_id`),
+  KEY `dev` (`data_entry_value`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `degree_tracks` (
+  `track_id` int(11) NOT NULL AUTO_INCREMENT,
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `major_code` varchar(10) NOT NULL DEFAULT '',
+  `track_code` varchar(10) NOT NULL DEFAULT '',
+  `track_title` varchar(100) NOT NULL DEFAULT '',
+  `track_short_title` varchar(50) NOT NULL DEFAULT '',
+  `track_description` text,
+  PRIMARY KEY (`track_id`)
+);  ";
+db_query($q);
+
+$q = "
+CREATE TABLE `degrees` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `degree_id` int(11) NOT NULL DEFAULT '0',
+  `major_code` varchar(20) NOT NULL DEFAULT '',
+  `degree_type` varchar(20) NOT NULL DEFAULT '',
+  `degree_class` varchar(5) NOT NULL DEFAULT '',
+  `title` varchar(200) NOT NULL DEFAULT '',
+  `public_note` text,
+  `semester_titles_csv` text,
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `exclude` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `degree_id` (`degree_id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `draft_courses` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `course_id` int(11) NOT NULL DEFAULT '0',
+  `subject_id` varchar(10) NOT NULL DEFAULT '',
+  `course_num` varchar(10) NOT NULL DEFAULT '',
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `title` text,
+  `description` text,
+  `min_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `max_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `repeat_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `exclude` tinyint(4) NOT NULL DEFAULT '0',
+  `data_entry_comment` text,
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `course_id` (`course_id`),
+  KEY `subject_id` (`subject_id`),
+  KEY `course_num` (`course_num`),
+  KEY `catalog_year` (`catalog_year`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `draft_degree_requirements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `degree_id` int(11) NOT NULL DEFAULT '0',
+  `semester_num` int(11) NOT NULL DEFAULT '0',
+  `group_id` int(11) NOT NULL DEFAULT '0',
+  `group_requirement_type` varchar(10) NOT NULL DEFAULT '',
+  `group_hours_required` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `group_min_grade` varchar(10) NOT NULL DEFAULT '',
+  `course_id` int(11) NOT NULL DEFAULT '0',
+  `course_min_grade` varchar(10) NOT NULL DEFAULT '',
+  `course_requirement_type` varchar(10) NOT NULL DEFAULT '',
+  `data_entry_value` varchar(50) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `degree_id` (`degree_id`),
+  KEY `group_id` (`group_id`),
+  KEY `dev` (`data_entry_value`)
+);";
+db_query($q);
+
+$q = "
+CREATE TABLE `draft_degree_tracks` (
+  `track_id` int(11) NOT NULL AUTO_INCREMENT,
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `major_code` varchar(10) NOT NULL DEFAULT '',
+  `track_code` varchar(10) NOT NULL DEFAULT '',
+  `track_title` varchar(100) NOT NULL DEFAULT '',
+  `track_short_title` varchar(50) NOT NULL DEFAULT '',
+  `track_description` text,
+  PRIMARY KEY (`track_id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `draft_degrees` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `degree_id` int(11) NOT NULL DEFAULT '0',
+  `major_code` varchar(20) NOT NULL DEFAULT '',
+  `degree_type` varchar(20) NOT NULL DEFAULT '',
+  `degree_class` varchar(5) NOT NULL DEFAULT '',
+  `title` varchar(200) NOT NULL DEFAULT '',
+  `public_note` text,
+  `semester_titles_csv` text,
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `exclude` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `degree_id` (`degree_id`)  
+);";
+db_query($q);
+
+$q = "
+CREATE TABLE `draft_group_requirements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `group_id` int(11) NOT NULL DEFAULT '0',
+  `course_id` int(11) NOT NULL DEFAULT '0',
+  `course_min_grade` varchar(10) NOT NULL DEFAULT '',
+  `course_repeats` int(11) NOT NULL DEFAULT '0',
+  `child_group_id` int(11) NOT NULL DEFAULT '0',
+  `data_entry_value` varchar(50) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `group_id` (`group_id`),
+  KEY `dev` (`data_entry_value`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `draft_groups` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `group_id` int(11) NOT NULL DEFAULT '0',
+  `group_name` varchar(200) NOT NULL DEFAULT '',
+  `title` varchar(255) NOT NULL DEFAULT '',
+  `definition` text,
+  `icon_filename` text,
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `priority` int(11) NOT NULL DEFAULT '50',
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  `data_entry_comment` text,
+  PRIMARY KEY (`id`),
+  KEY `group_id` (`group_id`),
+  KEY `group_name` (`group_name`),
+  KEY `catalog_year` (`catalog_year`),
+  KEY `title` (`title`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `draft_instructions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `instruction` text,
+  PRIMARY KEY (`id`)
+);";
+db_query($q);
+
+$q = "
+CREATE TABLE `faculty` (
+  `cwid` varchar(30) NOT NULL,
+  `college` varchar(100) NOT NULL DEFAULT '',
+  `department_code` varchar(10) NOT NULL DEFAULT '',
+  `department` varchar(100) NOT NULL DEFAULT '',  
+  `major_code` varchar(10) NOT NULL DEFAULT '',
+  PRIMARY KEY (`cwid`),
+  KEY `major_code` (`major_code`),
+  KEY `dept` (`department`),
+  KEY `department_code` (`department_code`),
+  KEY `college` (`college`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `group_requirements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `group_id` int(11) NOT NULL DEFAULT '0',
+  `course_id` int(11) NOT NULL DEFAULT '0',
+  `course_min_grade` varchar(10) NOT NULL DEFAULT '',
+  `course_repeats` int(11) NOT NULL DEFAULT '0',
+  `child_group_id` int(11) NOT NULL DEFAULT '0',
+  `data_entry_value` varchar(50) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `group_id` (`group_id`),
+  KEY `dev` (`data_entry_value`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `groups` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `group_id` int(11) NOT NULL DEFAULT '0',
+  `group_name` varchar(200) NOT NULL DEFAULT '',
+  `title` varchar(255) NOT NULL DEFAULT '',
+  `definition` text,
+  `icon_filename` text,
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `priority` int(11) NOT NULL DEFAULT '50',
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  `data_entry_comment` text,
+  PRIMARY KEY (`id`),
+  KEY `group_id` (`group_id`),
+  KEY `group_name` (`group_name`),
+  KEY `catalog_year` (`catalog_year`),
+  KEY `title` (`title`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `menu_router` (
+  `path` varchar(255) NOT NULL,
+  `access_callback` varchar(255) NOT NULL DEFAULT '',
+  `access_arguments` text,
+  `page_callback` varchar(255) NOT NULL DEFAULT '',
+  `page_arguments` text,
+  `title` varchar(255) NOT NULL DEFAULT '',
+  `description` text,
+  `type` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `tab_family` varchar(255) NOT NULL DEFAULT '',
+  `tab_parent` varchar(255) NOT NULL DEFAULT '',
+  `weight` int(11) NOT NULL DEFAULT '0',
+  `icon` varchar(255) NOT NULL DEFAULT '',
+  `page_settings` text,
+  `file` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`path`),
+  KEY `type` (`type`),
+  KEY `tab_family` (`tab_family`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `modules` (
+  `path` varchar(255) NOT NULL,
+  `name` varchar(100) NOT NULL DEFAULT '',
+  `version` varchar(20) NOT NULL DEFAULT '',
+  `requires` text,
+  `enabled` int(11) NOT NULL DEFAULT '0',
+  `weight` int(11) NOT NULL DEFAULT '0',
+  `type` varchar(20) NOT NULL DEFAULT '',
+  `schema` int(11) NOT NULL DEFAULT '0',
+  `info` text,
+  PRIMARY KEY (`path`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `role_permissions` (
+  `pid` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `rid` int(10) unsigned NOT NULL DEFAULT '0',
+  `perm` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`pid`),
+  KEY `perm` (`perm`),
+  KEY `rid` (`rid`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `roles` (
+  `rid` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`rid`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `standardized_tests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `test_id` varchar(20) NOT NULL DEFAULT '',
+  `category_id` varchar(20) NOT NULL DEFAULT '',
+  `position` int(11) NOT NULL DEFAULT '0',
+  `test_description` varchar(200) NOT NULL DEFAULT '',
+  `category_description` varchar(200) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_courses` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '',
+  `subject_id` varchar(10) NOT NULL DEFAULT '',
+  `course_num` varchar(10) NOT NULL DEFAULT '',
+  `hours_awarded` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `grade` varchar(5) NOT NULL DEFAULT '',
+  `term_id` varchar(20) NOT NULL DEFAULT '',
+  `level_code` varchar(10) NOT NULL DEFAULT '',
+  PRIMARY KEY  (`id`),
+  KEY `student_id` (`student_id`),
+  KEY `level_code` (`level_code`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_developmentals` (
+  `student_id` varchar(30) NOT NULL,
+  `requirement` varchar(15) NOT NULL DEFAULT '',
+  PRIMARY KEY (`student_id`),
+  KEY (`requirement`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_settings` (
+  `student_id` varchar(30) NOT NULL,
+  `settings` text,
+  `posted` int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`student_id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_substitutions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '',
+  `faculty_id` varchar(30) NOT NULL DEFAULT '',
+  `required_course_id` int(11) NOT NULL DEFAULT '0',
+  `required_entry_value` varchar(20) NOT NULL DEFAULT '',
+  `required_group_id` int(11) NOT NULL DEFAULT '0',
+  `required_semester_num` int(11) NOT NULL DEFAULT '0',
+  `sub_course_id` int(11) NOT NULL DEFAULT '0',
+  `sub_entry_value` varchar(20) NOT NULL DEFAULT '',
+  `sub_term_id` varchar(20) NOT NULL DEFAULT '',
+  `sub_transfer_flag` tinyint(4) NOT NULL DEFAULT '0',
+  `sub_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `sub_remarks` text,
+  `posted` int(10) unsigned NOT NULL DEFAULT '0',
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `student_id` (`student_id`),
+  KEY `rev` (`required_entry_value`),
+  KEY `sev` (`sub_entry_value`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_tests` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '',
+  `test_id` varchar(20) NOT NULL DEFAULT '',
+  `category_id` varchar(20) NOT NULL DEFAULT '',
+  `score` varchar(10) NOT NULL DEFAULT '',
+  `date_taken` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  PRIMARY KEY (`id`),
+  KEY `student_id` (`student_id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_transfer_courses` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '',
+  `transfer_course_id` int(11) NOT NULL DEFAULT '0',
+  `student_specific_course_title` varchar(255) NOT NULL DEFAULT '',
+  `term_id` varchar(20) NOT NULL DEFAULT '',
+  `grade` varchar(5) NOT NULL DEFAULT '',
+  `hours_awarded` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `level_code` VARCHAR(10) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  KEY `student_id` (`student_id`),
+  KEY `transfer_id` (`transfer_course_id`),
+  KEY `term_id` (`term_id`),
+  KEY `grade` (`grade`),
+  KEY `level_code` (`level_code`),
+  KEY `hrs` (`hours_awarded`)
+) ; ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_unassign_group` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '',
+  `faculty_id` varchar(30) NOT NULL DEFAULT '',
+  `course_id` int(11) NOT NULL DEFAULT '0',
+  `term_id` varchar(20) NOT NULL DEFAULT '',
+  `transfer_flag` tinyint(4) NOT NULL DEFAULT '0',
+  `group_id` int(11) NOT NULL DEFAULT '0',
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  `posted` int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY (`student_id`),
+  KEY (`faculty_id`),
+  KEY (`delete_flag`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `student_unassign_transfer_eqv` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '',
+  `faculty_id` varchar(30) NOT NULL DEFAULT '',
+  `transfer_course_id` int(11) NOT NULL DEFAULT '0',
+  `delete_flag` tinyint(4) NOT NULL DEFAULT '0',
+  `posted` int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY (`student_id`),
+  KEY (`faculty_id`),
+  KEY (`transfer_course_id`),
+  KEY (`delete_flag`)  
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `students` (
+  `cwid` varchar(30) NOT NULL,
+  `cumulative_hours` varchar(5) NOT NULL DEFAULT '',
+  `gpa` varchar(5) NOT NULL DEFAULT '',
+  `rank_code` varchar(5) NOT NULL DEFAULT '',
+  `major_code` varchar(20) NOT NULL DEFAULT '',
+  `catalog_year` int(11) NOT NULL DEFAULT '2006',
+  `is_active` tinyint(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`cwid`),
+  KEY `rank_code` (`rank_code`),
+  KEY `major_code` (`major_code`),
+  KEY `is_active` (`is_active`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `subjects` (
+  `subject_id` varchar(10) NOT NULL,
+  `college` varchar(10) NOT NULL DEFAULT '',
+  `title` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`subject_id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `transfer_courses` (
+  `transfer_course_id` int(11) NOT NULL AUTO_INCREMENT,
+  `institution_id` varchar(10) NOT NULL DEFAULT '',
+  `subject_id` varchar(10) NOT NULL DEFAULT '',
+  `course_num` varchar(10) NOT NULL DEFAULT '',
+  `title` varchar(100) NOT NULL DEFAULT '',
+  `description` text,
+  `min_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  `max_hours` decimal(8,4) NOT NULL DEFAULT '0.0000',
+  PRIMARY KEY (`transfer_course_id`),
+  KEY `ic` (`institution_id`),
+  KEY `si` (`subject_id`),
+  KEY `cn` (`course_num`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `transfer_eqv_per_student` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` varchar(30) NOT NULL DEFAULT '',
+  `transfer_course_id` int(11) NOT NULL DEFAULT '0',
+  `local_course_id` int(11) NOT NULL DEFAULT '0',
+  `valid_term_id` varchar(20) NOT NULL DEFAULT '',
+  `broken_id` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `student_id` (`student_id`),
+  KEY `transfer_course_id` (`transfer_course_id`),
+  KEY `local_course_id` (`local_course_id`),
+  KEY `broken_id` (`broken_id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `transfer_institutions` (
+  `institution_id` varchar(10) NOT NULL,
+  `name` varchar(200) NOT NULL DEFAULT '',
+  `state` varchar(10) NOT NULL DEFAULT '',
+  PRIMARY KEY (`institution_id`),
+  KEY `state` (`state`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `user_roles` (
+  `user_id` int(11) NOT NULL,
+  `rid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`user_id`),
+  KEY (`rid`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `user_settings` (
+  `user_id` int(11) NOT NULL,
+  `settings` text,
+  `posted` int(10) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`user_id`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `users` (
+  `user_id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_name` varchar(50) NOT NULL DEFAULT '',
+  `password` varchar(32) NOT NULL DEFAULT '',
+  `is_student` tinyint(4) NOT NULL DEFAULT '0',
+  `is_faculty` tinyint(4) NOT NULL DEFAULT '0',
+  `email` varchar(255) NOT NULL DEFAULT '',
+  `cwid` varchar(30) NOT NULL DEFAULT '',
+  `f_name` varchar(100) NOT NULL DEFAULT '',
+  `l_name` varchar(100) NOT NULL DEFAULT '',
+  `is_disabled` tinyint(4) NOT NULL DEFAULT '0',
+ PRIMARY KEY  (`user_id`),
+ KEY `cwid` (`cwid`),
+ KEY `user_name` (`user_name`),
+ KEY (`is_disabled`),
+ KEY (`is_faculty`),
+ KEY (`is_student`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `variables` (
+  `name` varchar(255) NOT NULL,
+  `value` text,
+  PRIMARY KEY (`name`)
+); ";
+db_query($q);
+
+$q = "
+CREATE TABLE `watchdog` (
+  `wid` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) unsigned NOT NULL DEFAULT '0',
+  `user_name` varchar(50) NOT NULL DEFAULT '',
+  `cwid` varchar(30) NOT NULL DEFAULT '',
+  `type` varchar(100) NOT NULL DEFAULT '',
+  `message` text,
+  `variables` text,
+  `severity` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `extra_data` varchar(255) NOT NULL DEFAULT '',
+  `location` text,
+  `referer` text,
+  `ip` varchar(64) NOT NULL DEFAULT '',
+  `is_mobile` tinyint(4) NOT NULL DEFAULT '0',
+  `is_student` tinyint(4) NOT NULL DEFAULT '0',
+  `is_faculty` tinyint(4) NOT NULL DEFAULT '0',
+  `timestamp` int(11) unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`wid`),
+  KEY `type` (`type`),
+  KEY `uid` (`user_id`),
+  KEY `uname` (`user_name`),
+  KEY `severity` (`severity`),
+  KEY `cwid` (`cwid`)
+); ";
+  
+  db_query($q); 
+    
+  
+}

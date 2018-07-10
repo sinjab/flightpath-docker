@@ -1,0 +1,21 @@
+<?php
+
+/**
+ * This file should contain only hooks relating to installing, enabling, disabling, and uninstalling this module.
+ *  
+*/
+
+
+/**
+ * Hook install.  Called when the module is installed on the admin modules page.
+ */
+function announcements_install() {
+  // Install a default announcement when first run.
+  $body = '<p>This is a sample announcement! You may add new announcements (or delete this one) from the Admin Console, then Content.</p>';
+  db_query("INSERT INTO content (user_id, type, title, body, settings, posted, updated)
+            VALUES ('1', 'announcement', 'Sample Announcement', '?', '?', '?', '?') 
+            ", $body, 'a:1:{s:10:"visibility";s:6:"public";}', time(), time());
+    
+    
+}
+

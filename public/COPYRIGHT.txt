@@ -1,0 +1,48 @@
+====================================
+Copyright Information for FlightPath
+====================================
+Last updated: 11/02/2013
+  
+All FlightPath code is Copyright 2006 - Present by the original authors.
+
+FlightPath was originally designed and programmed by the 
+University of Louisiana at Monroe. The original source (version 3x and below) 
+is Copyright (C) by the University of Louisiana at Monroe.
+http://www.ulm.edu
+
+FlightPath is considered "open source" under the 
+GNU General Public License, version 3 or any later version. 
+This covers any related files and documentation packaged with 
+FlightPath. 
+
+This means that you may modify and redistribute part
+or all of FlightPath's code, but it must remain open source, under
+the GNU General Public License.  You may NOT use any part of FlightPath's
+code in a purely commercial product whose source code is not also
+released under the GNU General Public License, version 3 or any later version.
+
+In other words, you can only copy FlightPath's code if your project is ALSO
+open source, specifically under the GNU General Public License.  It cannot
+be proprietary or "closed source."
+
+Note that you are not required to release your code at all.  However, if you
+do release it, it must be under the GNU GPL.
+
+All FlightPath modules are also released under the GNU GPL version 3 or any 
+later version, and fall under the same restrictions and protections.
+
+The license is defined in full here: http://www.gnu.org/licenses/gpl.html,
+and reproduced in the LICENSE.txt file. 
+
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+for more details.
+
+FlightPath includes works under other copyright notices and distributed
+according to the terms of the GNU General Public License or a compatible
+license.
+
+You may modify FlightPath's source code, but this copyright and license
+notice must not be modified, and must be included with the source code.
+

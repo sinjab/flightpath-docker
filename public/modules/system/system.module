@@ -1,0 +1,2730 @@
+<?php
+
+/**
+ * Implementation of hook_perm().
+ * Expects to return an array of permissions recognized by
+ * this module.
+ * 
+ * Ex:   $a = array( 
+ *          "deCanDoSomething" => array ( 
+ *              "title" => "Can Do Something",
+ *              "description" => "Allow the user to do something." 
+ *          )
+ *        );
+ *
+ */
+function system_perm() {
+  
+  $perms = array (
+    "access_logged_in_content" => array(
+      "title" => t("Access logged-in content"),
+      "description" => t("This should be given to all authenticated users.  It simply means
+                          the user is allowed to view the logged-in area of FlightPath."),
+    ),  
+    
+    "administer_modules" => array(
+      "title" => t("Administer modules"),
+      "description" => t("This will allow a user to install, enable, disable, and uninstall modules."),
+    ),    
+    
+    "run_cron" => array(
+      "title" => t("Run Cron"),
+      "description" => t("The user may run hook_cron functions at will. Causes a new menu link to appear
+                          on the admin page."),
+    ),    
+        
+    "de_can_administer_system_settings" => array(
+      "title" => t("Can administer system settings"),
+      "description" => t("This allows the user to edit any of the FlightPath
+                        system settings."),
+    ),
+    
+    "de_can_administer_school_data" => array(
+      "title" => t("Can administer school data"),
+      "description" => t("This allows the user to edit the school data settings for FlightPath.
+                          For example, describing college and subject codes."),
+    ),
+    
+    
+    "view_fpm_debug" => array(
+      "title" => t("View debug output from the fpm() function"),
+      "description" => t("The user may view debug output from the fpm() function.
+                        Useful for developers."),
+    ),
+    
+    "view_system_status" => array(
+      "title" => t("View system status"),
+      "description" => t("The user may view the update status and other requirements of the system."),
+    ),
+    
+    "execute_php" => array(
+      "title" => t("Execute PHP code"),
+      "description" => t("WARNING: This is a very VERY powerful and DANGEROUS permission.  Only give it to
+                       developers.  An 'Execute PHP' link will appear on the admin menu, which
+                       lets the user execute any arbitrary PHP code."),
+    ),
+                            
+       
+  );
+
+  return $perms;
+  
+}
+
+
+
+/**
+ * Return an array containing the roles which have been assigned to
+ * a specific user.
+ */
+function system_get_roles_for_user($user_id) {
+      
+  $rtn = array();  
+  
+  $res = db_query("SELECT * FROM user_roles a, roles b 
+                   WHERE user_id = '?' 
+                   AND a.rid = b.rid ", $user_id);
+  while ($cur = db_fetch_array($res)) {
+    $rtn[$cur["rid"]] = $cur["name"];
+  }
+  
+  // Is this person in the users table?  If so, they will get the rid 2 (authenticated)
+  // If not, they will get the role 1 (anonymous)
+  
+  $res2 = db_query("SELECT user_id FROM users WHERE user_id = '?' AND user_id <> '0' ", $user_id);
+  if (db_num_rows($res2) > 0) {
+    $rtn[2] = t("authenticated user");
+  }
+  else {
+    $rtn[1] = t("anonymous user");
+  }
+  
+  return $rtn;
+  
+}
+
+
+
+/**
+ * This function will attempt to confirm that "clean URLs" is functioning, and
+ * allowed on this server.
+ * 
+ * Returns TRUE or FALSE
+ */
+function system_check_clean_urls() {
+  
+  // Are clean-url's enabled?
+  
+  
+  // We will do this by trying to retrieve a test URL, built into index.php.
+  // If we can get a success message back from "http://example.com/flightpath/test-clean-urls/check", then
+  // we are good to go.
+  
+  // First, figure out the base URL.
+  $protocol = strpos(strtolower($_SERVER['SERVER_PROTOCOL']),'https') === FALSE ? 'http' : 'https';
+  $host = $_SERVER['HTTP_HOST'];
+  $script = $_SERVER['SCRIPT_NAME'];
+  $base_url = $protocol . "://" . $host . $script;
+  $base_url = str_replace("/install.php", "", $base_url);  
+  $base_url = str_replace("/index.php", "", $base_url);  
+  // Try to get our test URL's success message...
+  $res = fp_http_request($base_url . '/test-clean-urls/check');
+  
+  if ($res->code != 200) {
+    // There was an error or some other problem!
+    
+    // But wait-- did we get redirected?
+    if (isset($res->redirect_code) && $res->redirect_code == 200) {
+      return TRUE;  // it's OK after all!
+    }
+
+    
+    return FALSE;    
+  }
+  
+  // If we made it here, it must have worked.
+  return TRUE;
+  
+}
+
+
+
+/**
+ * Hook block regions.
+ * 
+ * This function simply defines which block regions we will handle.  Each
+ * block section should have a unique machine name, so it is best to namespace it with the
+ * name of the module, then page or tab it appears on.
+ * 
+ * The array looks like this:
+ * return array(
+ *   "system_main" => array(
+ *     "title" => t("Main Tab"),
+ *     "regions" => array (
+ *       "left_col" => array("title" => t("Left Column")),
+ *       "right_col" => array("title" => t("Right Column")),
+ *      ),
+ *   ),
+ * );
+ *  
+ * 
+ * REMEMBER to make these machine-names, so only alpha numeric and underscores! 
+ */
+function system_block_regions() {
+  return array(
+    "system_main" => array(
+      "title" => t("Main Tab"),
+      "regions" => array (
+        "left_col" => array("title" => t("Left Column")),
+        "right_col" => array("title" => t("Right Column")),
+       ),       
+    ),
+    "system_login" => array(
+      "title" => t("Login Page"),
+      "regions" => array (
+        "top" => array("title" => t("Top")),
+        "left_col" => array("title" => t("Left Column")),
+        "right_col" => array("title" => t("Right Column")),
+        "bottom" => array("title" => t("Bottom")),
+       ),       
+    ),    
+  );
+}
+
+
+
+function system_menu() {
+  $items = array();
+  
+  $items["main"] = array(
+    "title" => "Main",
+    "page_callback" => "system_display_main_page",
+    "access_callback" => TRUE,
+    "type" => MENU_TYPE_TAB,
+    "tab_family" => "system",
+    "weight" => 10,
+    "page_settings" => array(
+      "display_greeting" => TRUE,
+      "display_currently_advising" => TRUE,
+      "screen_mode" => "not_advising",
+      "page_has_search" => TRUE,
+    ),
+  );
+  
+  $items["install-finished"] = array(
+    "title" => "Installation Finished",
+    "page_callback" => "system_display_install_finished_page",
+    "access_callback" => TRUE,
+    "type" => MENU_TYPE_CALLBACK,
+  );
+  
+  $items["login"] = array(
+    "title" => "Login",
+    "page_callback" => "system_display_login_page",
+    "access_callback" => TRUE,
+    "type" => MENU_TYPE_NORMAL_ITEM,
+  );
+
+ $items["admin-tools/clear-cache"] = array(
+    "title" => "Clear all cache",
+    "page_callback" => "system_perform_clear_cache",
+    "access_arguments" => array("administer_modules"),
+    "type" => MENU_TYPE_NORMAL_ITEM,
+  );  
+
+
+  $items["admin/config/run-cron"] = array(
+    "title" => "Run cron now",
+    "description" => "Run the normal cron operations right away",
+    "page_callback" => "system_perform_run_cron",
+    "access_arguments" => array("run_cron"),
+    "type" => MENU_TYPE_NORMAL_ITEM,
+  );  
+
+  $items["admin/config/status"] = array(
+    "title" => "System status",
+    "description" => "View important notifications and updates for your installation of FlightPath",
+    "page_callback" => "system_display_status_page",
+    "access_arguments" => array("view_system_status"),
+    "page_settings" => array(
+      "page_show_title" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),      
+    ),        
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+    "weight" => 50,
+  );  
+  
+
+  $items["admin/db-updates"] = array(
+    "title" => "Run DB updates?",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("system_confirm_db_updates_form"),
+    "access_arguments" => array("administer_modules"),
+    "type" => MENU_TYPE_NORMAL_ITEM,
+  );  
+     
+  
+  $items["admin/completed-db-updates"] = array(
+    "title" => "Database updates completed",
+    "page_callback" => "system_display_completed_db_updates",    
+    "access_arguments" => array("administer_modules"),
+    "page_settings" => array(
+      "page_show_title" => TRUE,
+    ),       
+    "type" => MENU_TYPE_NORMAL_ITEM,
+  );    
+  
+  
+  $items["admin/config/system-settings"] = array(
+    "title" => "System settings",
+    "description" => "Configure settings for FlightPath",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("system_settings_form", "system_settings"),
+    "access_arguments" => array("de_can_administer_system_settings"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_icon" => fp_theme_location() . "/images/toolbox.gif",
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  );
+  
+  
+  $items["admin/config/school-data"] = array(
+    "title" => "Configure school data",
+    "description" => "Configure school-specific data and settings",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("system_school_data_form", "system_settings"),
+    "access_arguments" => array("de_can_administer_school_data"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_icon" => fp_theme_location() . "/images/toolbox.gif",
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  );  
+  
+  
+  
+  $items["admin/config/modules"] = array(
+    "title" => "Modules",
+    "description" => "Manage which modules are enabled for your site",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("system_modules_form"),
+    "access_arguments" => array("administer_modules"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  );
+
+  $items["system/uninstall-module"] = array(
+    "page_callback" => "system_handle_uninstall_module",
+    "page_arguments" => array(2),
+    "access_arguments" => array("administer_modules"),
+    "type" => MENU_TYPE_CALLBACK,
+  );
+  
+  
+  
+  $items["admin/config/clear-menu-cache"] = array(
+    "title" => "Clear menu cache",
+    "description" => "Clear and rebuild menus and URLs",
+    "page_callback" => "system_perform_clear_menu_cache",
+    "access_arguments" => array("administer_modules"),
+    "type" => MENU_TYPE_NORMAL_ITEM,
+  );  
+  
+  $items["system-handle-form-submit"] = array(
+    "page_callback" => "system_handle_form_submit",
+    "access_callback" => TRUE,
+    "type" => MENU_TYPE_CALLBACK,
+  );  
+    
+  $items["logout"] = array(
+    "title" => "Logout",
+    "page_callback" => "system_handle_logout",
+    "access_callback" => TRUE,
+    "type" => MENU_TYPE_CALLBACK,
+  );
+  
+         
+
+  $items["popup-report-contact"] = array(
+    "title" => "Report/Contact",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("system_popup_report_contact_form"),
+    "access_callback" => TRUE,
+    "page_settings" => array(
+      "page_is_popup" => TRUE,
+      "page_hide_report_error" => TRUE,
+    ),   
+    "type" => MENU_TYPE_CALLBACK,
+  );              
+           
+
+  $items["popup-contact-form/thank-you"] = array(
+    "title" => "Report/Contact",
+    "page_callback" => "system_popup_report_contact_thank_you",    
+    "access_callback" => TRUE,
+    "page_settings" => array(
+      "page_is_popup" => TRUE,
+      "page_hide_report_error" => TRUE,
+    ),   
+    "type" => MENU_TYPE_CALLBACK,
+  );                         
+                      
+
+  
+  $items["admin/config/execute-php"] = array(
+    "title" => "Execute PHP",
+    "description" => "Execute arbitrary PHP on your server. Caution: could be dangerous if not understood",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("system_execute_php_form", "system_settings"),
+    "access_arguments" => array("execute_php"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,      
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  ); 
+
+   
+           
+  return $items;
+}
+
+
+
+function system_execute_php_form() {
+  $form = array();
+  
+  $form["mark" . $m++] = array(
+    "value" => t("Use this form to execute arbitrary PHP code.  <b>DO NOT</b>
+                   type php tags (&lt;php ?&gt;).  Be careful!  Entering bad code
+                   here can harm your site.  Only use if you know what you are doing."),    
+  );
+
+  $form["system_execute_php"] = array(
+    "type" => "textarea",
+    "label" => t("Enter PHP code here:"),
+    "value" => variable_get("system_execute_php", ""),
+    "rows" => 20,
+  );
+  
+  
+  return $form;
+}
+
+function system_execute_php_form_submit($form, $form_state) {
+  $code = trim($form_state["values"]["system_execute_php"]);
+  if ($code == "") return;
+  
+  eval($code);
+  
+}
+
+
+/**
+ * Display a confirmation form before we run the db updates (hook_updates)
+ *
+ * @return unknown
+ */
+function system_confirm_db_updates_form() {
+  $form = array();
+
+  $form["mark" . $m++] = array(
+    "value" => t("Are you sure you wish to run the database updates?
+                This will find modules which have been updated, and now need to
+                make database changes.") . "
+                <br><br>
+                " . t("You should back up your entire database first, just in case a problem
+                occurs!"),
+  );
+  
+
+  $form["submit"] = array(
+    "type" => "submit",
+    "value" => t("Continue"),
+    "prefix" => "<hr>",
+    "suffix" => "&nbsp; &nbsp; <a href='javascript: history.go(-1);'>" . t("Cancel") . "</a>",    
+  );
+  
+  $form["mark" . $m++] = array(
+    "value" => t("Press only once, as this make take several moments to run."),
+  );
+  
+  
+  return $form;
+}
+
+
+/**
+ * Perform the actual hook_update calls here, send the user to a completed page.
+ *
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function system_confirm_db_updates_form_submit($form, $form_state) {
+  
+  
+  // We need to find modules whose schema in their .info file
+  // is different than what's in the database.
+  
+  $module_dirs = array();
+  $module_dirs[] = array("start" => "modules", "type" => t("Core"));
+  $module_dirs[] = array("start" => "custom/modules", "type" => t("Custom"));
+    
+  foreach ($module_dirs as $module_dir) {
+    $start_dir = $module_dir["start"];
+     
+    if ($dh = opendir($start_dir)) {
+      while ($file = readdir($dh)) {    
+        if ($file == "." || $file == "..") continue;
+        
+        if (is_dir($start_dir . "/" . $file)) {  
+         
+          // Okay, now look inside and see if there is a .info file.
+          if (file_exists("$start_dir/$file/$file.info")) {
+            $module = $file;
+            $info_contents = file_get_contents("$start_dir/$file/$file.info");
+              
+            //fpm($info_contents);  
+            // From the info_contents variable, split up and place into an array.
+            $info_details_array = array();
+            $lines = explode("\n", $info_contents);
+            foreach ($lines as $line) {
+              if (trim($line) == "") continue;
+              $temp = explode("=", trim($line));
+              $info_details_array[trim($temp[0])] = trim(substr($line, strlen($temp[0]) + 1)); 
+            }
+            
+            
+            $path = "$start_dir/$file";
+            
+            $res = db_query("SELECT * FROM modules WHERE path = '?' ", $path);
+            $cur = db_fetch_array($res);
+            $info_details_array["enabled"] = $cur["enabled"];
+           
+            // Does this module need to run db updates?
+            if ($cur["enabled"] == "1" && $cur["schema"] != $info_details_array["schema"] && $info_details_array["schema"] != "") {
+              // YES, we need to run this module's hook_update function, if it exists.
+              
+              // So, let's try to do that.              
+
+              // If the module has a .install file, begin by including it.
+              if (include_module_install($module, $path)) {
+                  
+                // Include the original module file first.
+                include_module($module, TRUE, $path);
+                                   
+                // Now, we can call hook_update, if it exists.
+                if (function_exists($module . '_update')) {
+                  call_user_func_array($module . '_update', array($cur["schema"], $info_details_array["schema"]));
+                }
+                   
+              }              
+              
+              // Okay, update the modules table for this module, and set schema to correct version.
+              $res = db_query("UPDATE modules 
+                                SET `schema` = '?'
+                                WHERE path = '?' LIMIT 1 ", $info_details_array["schema"], $path);
+                                       
+              
+              fp_add_message(t("The module %module has run its DB updates.", array("%module" => $module)));              
+
+              
+              
+            }  
+  
+          }
+        }
+      }
+    }
+  }  
+  
+  // Clear our cache
+  fp_clear_cache();
+  
+  fp_goto("admin/completed-db-updates");
+}
+
+
+
+/**
+ * Once db updates are run, display contents of this page.
+ *
+ */
+function system_display_completed_db_updates() {
+  $rtn = "";
+  
+  $rtn .= t("Database updates have been completed.  If you do not see
+              any errors displayed, it means everything was run correctly.");
+  
+  $rtn .= "<br><br>
+              <ul>";
+  
+  $rtn .= "<li>" . l(t("Return to Admin"), "admin-tools/admin") . "</li>
+          <li>" . l(t("Return to Modules page"), "admin/config/modules") . "</li>
+           
+          </ul>";
+  
+  
+  return $rtn;
+}
+
+
+
+
+
+/**
+ * This page is displayed to the user once FlightPath has been installed.
+ */
+function system_display_install_finished_page() {
+  $rtn = "";
+
+  // Rebuild one more time
+  menu_rebuild_cache(FALSE);
+
+
+  fp_show_title(TRUE);
+  
+  $rtn .= t("Your new installation of FlightPath is now complete.
+              <br><br>
+             As a security precaution, you should: 
+             <ul>
+              <li>change the permissions
+                  on custom/settings.php so that it cannot be read or written to by unauthorized
+                  users.</li>
+              <li>You should also rename or remove install.php so that web visitors cannot
+                  access it.</li>
+             </ul>
+             
+             If you need to re-install FlightPath, delete custom/settings.php, and drop all of the tables
+             in the database, then re-access install.php.") . "<br><br>";
+
+  $rtn .= l(t("Access your new FlightPath site now."), "<front>");
+  
+  
+  return $rtn;
+}
+
+
+/**
+ * This is the thank you page you see after submitting the contact form.
+ */
+function system_popup_report_contact_thank_you() {
+  $rtn = "";
+  
+  $rtn .= fp_render_curved_line(t("Contact the FlightPath Production Team"));
+  $rtn .= t("Thank you for submitting to the FlightPath Production Team.  They 
+             have received your comment and will review it shortly.") . "<br><br>";
+  $rtn .= t("You may now close this window.");
+  
+  return $rtn;
+}
+
+
+/**
+ * This is the form which lets users send an email to the FlightPath production
+ * team, 
+ */
+function system_popup_report_contact_form() {
+  $form = array();
+ 
+  fp_set_title("");
+  
+  $form["mark" . $m++] = array(
+    "value" => fp_render_curved_line(t("Contact the FlightPath Production Team")),
+  );
+  
+  if (!user_has_permission("access_logged_in_content")) {
+    $form["mark" . $m++] = array(
+      "value" => t("We're sorry, but for security reasons you may only access this form
+                    if you are logged in to FlightPath."),
+    );
+    return $form;
+  }
+  
+  $form["mark" . $m++] = array(
+    "value" => t("If you've noticed an error or have a suggestion, use this
+                  form to contact the FlightPath Production Team."),
+  );  
+  
+  $form["category"] = array(
+    "type" => "select",
+    "label" => t("Please select a category"),
+    "options" => array(
+                     t("Advising") => t("Advising"),
+                     t("Degree plan") => t("Degree plan"),
+                     t("What If?") => t("What If?"),
+                     t("Searching") => t("Searching"),
+                     t("Comments") => t("Comments"),
+                     t("Other") => t("Other"),
+                      ),
+  );
+
+  $form["comment"] = array(
+    "type" => "textarea",
+    "label" => t("Comment:"),    
+  );
+  
+  $form["submit"] = array(
+    "type" => "submit",
+    "value" => t("Send email"),    
+  );  
+  
+  $form["#redirect"] = array("path" => "popup-contact-form/thank-you");    
+  return $form;
+}
+
+
+function system_popup_report_contact_form_submit($form, $form_state) {
+  global $user;
+  
+  $category = strip_tags($form_state["values"]["category"]);
+  $comment = strip_tags($form_state["values"]["comment"]);
+  
+  $possible_student = $_SESSION["advising_student_id"];
+  
+  $user_roles = implode(", ", $user->roles);
+  
+  $datetime = date("Y-m-d H:i:s", strtotime("now"));
+
+  //$headers = "From: FlightPath-noreply@noreply.com\n";
+  $subject = t("FLIGHTPATH REPORT CONTACT") . " - $category ";
+  $msg = "";
+  $msg .= t("You have received a new report/contact on") . " $datetime.\n";
+  $msg .= t("Name:") . " $user->f_name $user->l_name ($user->name)  CWID: $user->cwid  \n" . t("User roles:") . " $user_roles \n\n";
+  $msg .= t("Category:") . " $category  \n";
+  $msg .= t("Possible Student:") . " $possible_student  \n";
+  $msg .= t("Comment:") . " \n $comment \n\n";
+  $msg .= "------------------------------------------------ \n";
+
+  $themd5 = md5($user->name . $user->cwid . $comment . $user_roles . $category);
+
+  if ($_SESSION["da_error_report_md5"] != $themd5)
+  {  // Helps stop people from resubmitting over and over again
+    // (by hitting refresh, or by malicious intent)..
+
+    $msg = addslashes($msg);
+    $to = variable_get("contact_email_address", "");
+    
+    if ($to != "") {
+      //mail($to,$subject,$msg,$headers);
+      mail($to,$subject,$msg);
+    }
+
+  } 
+
+  $_SESSION["da_error_report_md5"] = $themd5;
+  
+}
+
+
+
+
+/**
+ * This form is for the school-data, like subject code descriptions, colleges, etc.
+ *
+ */
+function system_school_data_form() {
+  $form = array();
+  
+  
+  $form["course_repeat_policy"] = array(
+    "type" => "select",
+    "label" => t("Course repeat policy:"),
+    "options" => array("most_recent_exclude_previous" => t("most recent, exclude previous attempts"),
+                       "most_recent_do_not_exclude" => t("most recent, do not exclude previous attempts - \"beta\" feature")),
+    "value" => variable_get("course_repeat_policy", "most_recent_exclude_previous"),
+    "hide_please_select" => TRUE,
+    "description" => t("This setting affects the course repeat policy for FlightPath for normal courses.
+                        <br><b>If you are unsure what to select</b>, choose 'most recent, exclude previous attempts'.
+                        <br>Please see the 
+                <b><a href='http://getflightpath.com/node/1085' target='_blank'>FlightPath documentation</a></b> 
+                on how to set up this field."),
+                                              
+                        
+  );
+  
+  
+  $form["ignore_courses_from_hour_counts"] = array(
+    "type" => "textfield",
+    "label" => t("Ignore courses from hour counts (CSV):"),
+    "value" => variable_get("ignore_courses_from_hour_counts", ""),
+    "description" => t("List courses, separated by comma, 
+                which should be ignored in hours counts.  This helps
+                remedial courses from being applied to hour counts.
+                <br><b>These courses will automatically be assigned the requirement type code 'x'.</b>
+                <br>
+                Ex: MATH 093, ENGL 090, UNIV 1001"),    
+  );
+
+
+
+  $form["term_id_structure"] = array(
+    "type" => "textarea",
+    "label" => t("Structure of term ID's:"),
+    "value" => variable_get("term_id_structure", ""),
+    "description" => t("Use this space to define termID structures, one per line.
+                Please see the 
+                <b><a href='http://getflightpath.com/node/1085' target='_blank'>FlightPath documentation</a></b> 
+                on how to set up this field.") . "
+                <br>" . t("Ex:") . " 
+                <br>[Y4]60, Spring, Spring of [Y4], Spr '[Y2]
+                <br>[Y4]40, Fall, Fall of [Y4-1], Fall '[Y2-1]",    
+  );
+
+             
+  
+  
+  
+  // Let's load the subjects...
+  $subjects = "";
+  $query = "SELECT DISTINCT b.subject_id, a.title, a.college FROM draft_courses b LEFT JOIN subjects a
+              ON (a.subject_id = b.subject_id)
+              WHERE exclude = 0              
+              ORDER BY b.subject_id
+              ";
+   
+  
+  $result = db_query($query);
+  while ($cur = db_fetch_array($result))
+  {      
+    //fpm($cur);
+    $title = trim($cur["title"]);
+    $subject_id = trim($cur["subject_id"]);
+    $college = trim($cur["college"]);
+        
+    $subjects .= $subject_id . " ~ " . $college . " ~ " . $title . "\n";
+  }
+    
+  
+  $form["subjects"] = array(
+    "type" => "textarea",
+    "label" => t("Subjects:"),
+    "value" => $subjects,
+    "rows" => 15,
+    "description" => t("Enter subjects known to FlightPath (for use
+                        in popups and the Course Search, for example), one per line
+                        in this format:") . "<br>SUBJ ~ COLLEGE ~ Title<br>" . t("For example:") . "
+                        <br>&nbsp; ACCT ~ BA ~ Accounting<br>&nbsp; BIOL ~ AS ~ Biology<br>" . t("Notice
+                        the separator between the code, college, and title is 1 tilde (~). Whatespace is ignored.
+                        <br><b>Important:</b> This field cannot be set up until you have your courses
+                        fully entered.  Once that occurs, the course
+                        subjects will automatically appear in this box, where you can then assign the college code
+                        and subject title."),
+  );  
+  
+  
+  // Load the colleges...
+  $colleges = "";
+  $res = db_query("SELECT * FROM colleges ORDER BY college_code");
+  while ($cur = db_fetch_array($res)) {
+    $colleges .= $cur["college_code"] . " ~ " . $cur["title"] . "\n";
+  }
+  
+  $form["colleges"] = array(
+    "type" => "textarea",
+    "label" => t("Colleges:"),
+    "value" => $colleges,
+    "description" => t("Enter colleges known to FlightPath, one per line, in this format:
+                       ") . "<br>COLLEGE_CODE ~ Title<br>" . t("For example:") . "
+                       <br>&nbsp; AE ~ College of Arts, Science, and Education
+                       <br>&nbsp; PY ~ College of Pharmacy<br>" . t("Notice
+                        the separator between the code and title is 1 tilde (~). Whitespace is ignored."),
+  );
+  
+  
+
+  
+  // Load the degree_college data....
+  $degree_college = "";
+  
+  $res = db_query("SELECT DISTINCT(major_code) FROM draft_degrees ORDER BY major_code");
+  while ($cur = db_fetch_array($res)) {
+    $major_code = $cur["major_code"];
+    
+    // Is there an assigned college already?
+    $res2 = db_query("SELECT college_code FROM degree_college WHERE major_code = '?' ", $major_code); 
+    $cur2 = db_fetch_array($res2);
+    $college_code = $cur2["college_code"];
+    
+    $degree_college .= $major_code . " ~ " . $college_code . "\n";
+     
+  }
+  
+
+  $form["degree_college"] = array(
+    "type" => "textarea",
+    "label" => t("Degree Colleges:"),
+    "value" => $degree_college,
+    "rows" => 15,
+    "description" => t("Enter the degree's college, one per line, in this format:
+                       ") . "<br>MAJOR_CODE ~ COLLEGE_CODE<br>" . t("For example:") . "
+                       <br>&nbsp; ACCT ~ AE
+                       <br>&nbsp; BUSN ~ SB<br>" . t("Notice
+                        the separator between the codes is 1 tilde (~). Whitespace is ignored.
+                        <br><b>Important:</b> This field cannot be set up until you have your degrees
+                        entered.  Once that occurs, the degree major codes
+                        will automatically appear in this box, where you can then assign the college code.
+                        "),
+  );
+  
+  
+  
+  // How many decimal places allowed in substitutions?
+  
+  $form["sub_hours_decimals_allowed"] = array(
+    "type" => "select",
+    "label" => t("Substitution hours decimal places allowed:"),
+    "options" => array(1 => t("1 (ex: 1.1 hrs)"), 2 => t("2 (ex: 1.15 hrs)"), 3 => t("3 (ex: 1.155 hrs)"), 4 => t("4 (ex: 1.1556 hrs)")),
+    "value" => variable_get("sub_hours_decimals_allowed", 2),
+    "no_please_select" => TRUE,
+    "description" => t("For hours with decimals (like 2.25 hours), how many numbers
+                      after the decimal place will be allowed?  Affects users performing
+                      substitutions.  For example, if you select \"2\" here, then
+                      a value of 1.2555 will be rejected, and the user will be asked to re-enter.
+                      1.25, would be accepted, since it has 2 decimal places.
+                      <br>If you are unsure what to select, set to 2."),
+  );
+  
+  
+  // Auto-correct course titles?
+  $form["autocapitalize_course_titles"] = array(
+    "type" => "select",
+    "label" => t("Auto-capitalize course titles?"),
+    "options" => array("yes" => "Yes", "no" => "No"),
+    "hide_please_select" => TRUE,
+    "value" => variable_get("autocapitalize_course_titles", "yes"),
+    "description" => t("If set to yes, course titles in FlightPath will be run through a capitalization
+                        filter, so that 'INTRO TO ACCOUNTING' becomes 'Intro to Accounting'.
+                        Generally, this makes the course names more attractive, but it can
+                        incorrectly capitalize acronyms and initials.  Disable if you would like
+                        complete control over capitalization.
+                        <br>If unsure, set to Yes."),
+  );
+  
+
+  // Auto-correct institution names?
+  $form["autocapitalize_institution_names"] = array(
+    "type" => "select",
+    "label" => t("Auto-capitalize institution names?"),
+    "options" => array("yes" => "Yes", "no" => "No"),
+    "hide_please_select" => TRUE,
+    "value" => variable_get("autocapitalize_institution_names", "yes"),
+    "description" => t("If set to yes, transfer institution names in 
+                        FlightPath will be run through a capitalization
+                        filter, so that 'UNIVERSITY OF LOUISIANA AT MONROE' 
+                        becomes 'University of Louisiana at Monroe'.
+                        Like the course title setting above, this is to make
+                        inconsistent or unattractive capitalization prettier.  
+                        Disable if you would like
+                        complete control over capitalization.
+                        <br>If unsure, set to Yes."),
+  );
+
+  
+  // Only allow ghost subs for fellow ghost hours?
+  $form["restrict_ghost_subs_to_ghost_hours"] = array(
+    "type" => "select",
+    "label" => t("Restrict ghost substitutions to courses with zero hours only?"),
+    "options" => array("yes" => "Yes", "no" => "No"),
+    "hide_please_select" => TRUE,
+    "value" => variable_get("restrict_ghost_subs_to_ghost_hours", "yes"),
+    "description" => t("If set to yes, courses with \"ghost\" hours may only be
+                        substituted for other courses with \"ghost\" hours.  What this
+                        means is that if a course is worth zero hours, it may only be
+                        subbed for a requirement worth zero hours, and it will not appear
+                        as an option for substitutions of courses worth more than zero hours.
+                        This will not affect old subs; only new ones.
+                        <br>If unsure, set to Yes."),
+  );
+
+  
+  $form["initial_student_course_sort_policy"] = array(
+    "type" => "select",
+    "label" => t("Initial student course sort policy:"),
+    "options" => array("alpha" => "Alphabetical sort [default]", "grade" => "Best grade first (beta)"),
+    "hide_please_select" => TRUE,
+    "value" => variable_get("initial_student_course_sort_policy", "alpha"),
+    "description" => t("Student courses are sorted more than once as they are evaluated by FlightPath.
+                        By default, they are sorted alphabetically first.  If you change this to best-grade-first, 
+                        courses will be initally sorted according to the grade they earned, in the order defined in 'Grade order CSV' below.
+                        Any student grades not defined below will be considered the lowest possible grade."),
+  );
+  
+  $form["grade_order"] = array(
+    "type" => "textfield",
+    "label" => t("Grade order (CSV):"),
+    "value" => variable_get("grade_order", ""),
+    "description" => t("List all possible grades, separated by comma, from highest to lowest.  This is only needed if you
+                      selected 'Best grade first' sort policy above.
+                      <br>Ex: AMID,BMID,CMID,DMID,FMID,A,B,C,D,F,W,I"),
+  );
+  
+  
+
+  $form["retake_grades"] = array(
+    "type" => "textfield",
+    "label" => t("Retake grades (CSV):"),
+    "value" => variable_get("retake_grades", ""),
+    "description" => t("List grades, separated by comma, which means 'the student must
+                retake this course. They did not earn credit.' Ex: F,W,I"),    
+  );
+         
+  $form["withdrew_grades"] = array(
+    "type" => "textfield",
+    "label" => t("Withdrew grades (CSV):"),
+    "value" => variable_get("withdrew_grades", "W"),
+    "description" => t("List grades, separated by comma, which means 'the student withdrew
+                from this course. They did not earn credit.' Ex: W,WD,WF.  If not sure
+                what to enter here, just enter 'W'."),    
+  );  
+  
+  $form["enrolled_grades"] = array(
+    "type" => "textfield",
+    "label" => t("Enrolled grades (CSV):"),
+    "value" => variable_get("enrolled_grades", ""),
+    "description" => t("List grades, separated by comma, which means 'the student is
+                currently enrolled in this course.' Ex: E,AMID,BMID "),    
+  );
+
+  $form["b_or_better"] = array(
+    "type" => "textfield",
+    "label" => t("B or better grades (CSV):"),
+    "value" => variable_get("b_or_better", ""),
+    "description" => t("List grades, separated by comma, which are either a B or better."),    
+  );
+
+  $form["c_or_better"] = array(
+    "type" => "textfield",
+    "label" => t("C or better grades (CSV):"),
+    "value" => variable_get("c_or_better", ""),
+    "description" => t("List grades, separated by comma, which are either a C or better."),    
+  );
+
+  $form["d_or_better"] = array(
+    "type" => "textfield",
+    "label" => t("D or better grades (CSV):"),
+    "value" => variable_get("d_or_better", ""),
+    "description" => t("List grades, separated by comma, which are either a D or better."),    
+  );
+
+  $form["minimum_substitutable_grade"] = array(
+    "type" => "textfield",
+    "size" => 3,
+    "label" => t("Minimum substitutable grade:"),
+    "value" => variable_get("minimum_substitutable_grade", "D"),
+    "description" => t("Enter a grade which is the minimum grade a student must have earned
+                      for the course to be allowed in a substitution.  This will affect
+                      new substitutions, not old ones.  If unsure, enter D."),    
+  );
+  
+  
+
+  $form["calculate_cumulative_hours_and_gpa"] = array(
+    "label" => t("Calculate student cumulative hours and GPA?"),
+    "type" => "checkbox",
+    "value" => variable_get("calculate_cumulative_hours_and_gpa", FALSE),
+    "description" => t("If checked, student cumulative hours and GPA will not be read from the
+                          'students' database table, but will instead be calculated on the fly
+                          each time a student is loaded.  If unsure what to do, check this box."),    
+  );
+  
+  $form["quality_points_grades"] = array(
+    "label" => t("Quality points and grades:"),
+    "type" => "textarea",
+    "value" => variable_get("quality_points_grades", "A ~ 4\nB ~ 3\nC ~ 2\nD ~ 1\nF ~ 0\nI ~ 0"),
+    "description" => t("Enter a grade, and how many quality points it is worth, separated by
+                        tilde (~), one per line.  You must include every grade which should count
+                        for (or against) a GPA calculation, even if it is worth zero points.  For example,
+                        if an 'F' should cause a GPA to lower (which normally it would), it should be
+                        listed here.  If a 'W' grade should simply be ignored, then DO NOT list it here.
+                        Any grade you do not list here will be IGNORED in all GPA calculations.") . "
+                        <br>
+                        Ex:<blockquote style='margin-top:0; font-family: Courier New, monospace;'>                        
+                        A ~ 4<br>B ~ 3<br>C ~ 2<br>D ~ 1<br>F ~ 0<br>I ~ 0</blockquote>",
+  );
+  
+  
+  $form["requirement_types"] = array(
+    "label" => t("Requirement types and codes:"),
+    "type" => "textarea",
+    "value" => variable_get("requirement_types", "g ~ General Requirements\nc ~ Core Requirements\ne ~ Electives\nm ~ Major Requirements\ns ~ Supporting Requirements\nx ~ Additional Requirements"),
+    "description" => t("Enter requirement type codes and descriptions, separated by a tilde (~), one
+                        per line.  <b>You may not use the code 'u'</b> as that is reserved in FlightPath.
+                        <b>You should define what 'x' means</b>, but be aware that the code 'x' will always
+                        designate a course whose hours should be ignored from GPA calculations.
+                        <b>You should define what 'm' means</b>, as this is the default code applied
+                        to a requirement if one is not entered.  <b>You should define what
+                        'e' means</b>, as this is also the code given to courses whose types we cannot
+                        figure out, perhaps because of a typo or intentionally.  Ex:  Electives.
+                        This list also defines the order in which they will appear on screen in
+                        Type View.  By convention, codes should be lower case single-letters.") . "
+                        <br>Ex:
+                        <div style='padding-left: 20px; font-family: Courier New, monospace'>
+                         g ~ General Requirements<br>
+                         c ~ Core Requirements<br>
+                         e ~ Electives<br>
+                         m ~ Major Requirements<br>
+                         s ~ Supporting Requirements<br>
+                         x ~ Additional Requirements                         
+                         </div>
+                         
+                         Please see the 
+                <b><a href='http://getflightpath.com/node/1085' target='_blank'>FlightPath documentation</a></b> 
+                for more information on how to set up this field.
+                         ",
+                         
+  );
+
+  // Check to make sure the gd extension is loaded, since that will be required to display
+  // the pie charts...
+  if (!extension_loaded('gd') && !extension_loaded('gd2')) {
+    $form["mark" . $m++] = array(
+      "value" => "<p class='hypo'><b>" . t("Note: it appears your web server does not have the 'GD' library
+                                enabled for PHP.  This is required to make the pie charts show up
+                                correctly.  Contact your server administrator about enabling the 'GD'
+                                library.") . "</b></p>",
+    );
+  }
+  
+  
+  $form["pie_chart_config"] = array(
+    "label" => t("Pie chart configuration:"),
+    "type" => "textarea",
+    "value" => variable_get("pie_chart_config", "c ~ Core Requirements\nm ~ Major Requirements\ndegree ~ Degree Progress"),
+    "description" => t("Enter configuration data for the pie charts which graph a student's progress
+                        through their degree.  Enter the requirement type code, pie chart label, and optional
+                        colors separated by tilde (~).  Requirement types not found for a student will be skipped 
+                        and the chart will not be drawn. <b>Enter 'degree' for total progress.</b>") . "
+                        <br>Ex:  CODE ~ LABEL ~ [optional: UNFINISHED COLOR ~ PROGRESS COLOR ]
+                        <div style='padding-left: 20px; font-family: Courier New, monospace'>                          
+                          c ~ Core Requirements ~ 660000 ~ FFCC33<br>
+                          m ~ Major Requirements ~ 660000 ~ 93D18B<br>
+                          degree ~ Degree Progress ~ 660000 ~ 5B63A5
+                        </div>",
+                         
+  );
+
+  
+  $form["developmentals_title"] = array(
+    "label" => t("Developmentals semester block title:"),
+    "type" => "textfield",
+    "value" => variable_get("developmentals_title", t("Developmental Requirements")),
+    "description" => t("This is the title of the Developmental Requirements semester block,
+                        which appears on a student's degree plan, near the bottom, when they
+                        have remedial courses they are required to take.  If you are
+                        unsure what to enter, use 'Developmental Requirements'."),
+  );
+  
+  $form["developmentals_notice"] = array(
+    "label" => t("Developmentals notice text:"),
+    "type" => "textarea",
+    "value" => variable_get("developmentals_notice", t("According to our records, you are required to complete the course(s) listed above. For some transfer students, your record may not be complete. If you have any questions, please ask your advisor.")),
+    "description" => t("The text you enter here will be displayed below the Developmentals semester
+                        block, explaining to the student what these courses are.  For example:
+                        'According to our records, you are required to complete the course(s) listed
+                        above.'"),
+  );
+
+  
+
+  $form["graduate_level_codes"] = array(
+    "type" => "textfield",
+    "label" => t("Graduate course level codes (CSV):"),
+    "value" => variable_get("graduate_level_codes", "GR"),
+    "description" => t("List level codes, separated by comma, which should be considered graduate credit.  If you do not need
+                        to distinguish between graduate and undergraduate credit, leave this field blank.<br>If unsure, set to GR."),    
+  );
+  
+  
+  
+  $form["disallow_graduate_credits"] = array(
+    "type" => "select",
+    "label" => t("Disallow automatic use of graduate credits?"),
+    "options" => array("yes" => "Yes", "no" => "No"),
+    "hide_please_select" => TRUE,
+    "value" => variable_get("disallow_graduate_credits", "yes"),
+    "description" => t("If set to yes, FlightPath will not automatically use graduate credits (based on the level code the student's credit
+                        is given in the database) to populate elective groups or on the degree plan.  They may still be substituted using the
+                        substitution system however.  In order for this setting to work, the 'Graduate course level codes' field must be set above.
+                        <br>If unsure, set to Yes."),
+  );
+  
+
+  $form["display_graduate_credits_block"] = array(
+    "type" => "select",
+    "label" => t("Display graduate credits in their own semester block?"),
+    "options" => array("yes" => "Yes", "no" => "No"),
+    "hide_please_select" => TRUE,
+    "value" => variable_get("display_graduate_credits_block", "yes"),
+    "description" => t("If set to yes, FlightPath will display graduate credits in their own block, and NOT in Excess credits.  The graduate block details
+                        are set below.
+                        <br>If unsure, set to Yes."),
+  );
+  
+  
+  $form["graduate_credits_block_title"] = array(
+    "label" => t("Graduate Credits block title:"),
+    "type" => "textfield",
+    "value" => variable_get("graduate_credits_block_title", t("Graduate Credits")),
+    "description" => t("This is the title of the Graduate Credits semester block (setting above),
+                        which appears on a student's degree plan, near the bottom, when they
+                        have graduate credits in their history (based on the credit's level code).  If you are
+                        unsure what to enter, use 'Graduate Credits'."),
+  );
+  
+
+  $form["graduate_credits_block_notice"] = array(
+    "label" => t("Graduate Credits block notice text:"),
+    "type" => "textarea",
+    "value" => variable_get("graduate_credits_block_notice", t("These courses may not be used for undergraduate credit.")),
+    "description" => t("The text you enter here will be displayed below the Gradute Credits semester
+                        block, explaining to the student what these courses are.  For example:
+                        'These courses may not be used for undergraduate credit.'"),
+  );
+  
+  
+  
+  
+  
+  
+  return $form;
+}
+
+
+
+/**
+ * Validate handler for the school_data_form.
+ * 
+ * Most of our data can be saved as simple system_settings, but for the others,
+ * we want to save them to special tables, then remove them from the form_state so
+ * they don't get saved to the variables table, taking up a lot of space.
+ *
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function system_school_data_form_validate($form, &$form_state) {
+
+  
+  // Subjects...
+  db_query("TRUNCATE TABLE subjects");
+     
+  $subjects = trim($form_state["values"]["subjects"]);
+  $lines = explode("\n", $subjects);
+  foreach ($lines as $line) {
+    $temp = explode("~", $line);
+    
+    db_query("INSERT INTO subjects (subject_id, college, title)
+              VALUES ('?', '?', '?') ", strtoupper(trim($temp[0])), strtoupper(trim($temp[1])), trim($temp[2]));
+    
+  }
+  // Remove the data from our form_state, so it isn't saved twice
+  unset($form_state["values"]["subjects"]);
+  
+
+  
+  // Colleges...
+  db_query("TRUNCATE TABLE colleges");
+     
+  $contents = trim($form_state["values"]["colleges"]);
+  $lines = explode("\n", $contents);
+  foreach ($lines as $line) {
+    $temp = explode("~", $line);
+    
+    db_query("INSERT INTO colleges (college_code, title)
+              VALUES ('?', '?') ", strtoupper(trim($temp[0])), trim($temp[1]));
+    
+  }  
+  // Remove the data from our form_state, so it isn't saved twice
+  unset($form_state["values"]["colleges"]);
+
+  
+
+  // Degree College...
+  db_query("TRUNCATE TABLE degree_college");
+     
+  $contents = trim($form_state["values"]["degree_college"]);
+  $lines = explode("\n", $contents);
+  foreach ($lines as $line) {
+    $temp = explode("~", $line);
+    
+    db_query("INSERT INTO degree_college (major_code, college_code)
+              VALUES ('?', '?') ", strtoupper(trim($temp[0])), strtoupper(trim($temp[1])));
+    
+  }  
+  // Remove the data from our form_state, so it isn't saved twice
+  unset($form_state["values"]["degree_college"]);
+  
+  
+  
+  
+}
+
+
+
+
+/**
+ * This is the "system settings" form.
+ */
+function system_settings_form() {
+  $form = array();
+  
+  $form["mark" . $m++] = array(
+    "value" => t("Use this form to alter the various system settings in FlightPath.
+                  Before making changes, it is always good policy to first back up your database."),
+                  
+  );
+  
+  $form["mark" . $m++] = array(
+    "value" => "<p><div style='font-size:0.8em;'>" . t("Your site requires a cron job in order to perform routine tasks.  This
+                        is accomplished by having your server access the following URL every so often
+                        (like once an hour):") . "<br>&nbsp; &nbsp; <i>" . $GLOBALS["fp_system_settings"]["base_url"] . "/cron.php?t=" . $GLOBALS["fp_system_settings"]["cron_security_token"] . "</i>
+                        <br>" . t("Example linux cron command:") . "&nbsp; <i>wget -O - -q -t 1 http://ABOVE_URL</i></div></p>",
+  );
+  
+  
+  $form["maintenance_mode"] = array(
+    "label" => t("Set maintenance mode?"),
+    "type" => "checkbox",
+    "value" => variable_get("maintenance_mode", FALSE),
+    "description" => t("If checked, a message will display on every page stating
+                        that the system is currently undergoing routine maintenance."),    
+  );
+  
+  
+  $form["contact_email_address"] = array(
+    "type" => "textfield",
+    "label" => t("Contact email address:"),
+    "value" => variable_get("contact_email_address", ""),
+    "description" => t("Enter the email address to mail when a user accesses the
+                        Contact FlightPath Production Team popup."),
+    
+  );
+
+  
+  // Can we support clean_urls?
+  $bool_support_clean = system_check_clean_urls();
+  $form["support_clean_urls"] = array(
+    "type" => "hidden",
+    "value" => ($bool_support_clean) ? "yes" : "no",
+  );
+  
+  if ($bool_support_clean) {
+    // Give the option to change ONLY if we can support clean URLs
+    $form["clean_urls"] = array(
+      "type" => "checkbox",
+      "label" => t("Enable 'Clean URLs?'"),
+      "value" => variable_get("clean_urls", FALSE),
+      "description" => t("Your server supports 'clean URLs', which eliminates 'index.php?q=' from your URLs, making them
+                          more readable.  It is recommended you leave this feature enabled.  For more information, see: http://getflightpath.com/node/5."), 
+    );
+  }
+  else {
+    // Server does not support clean URLs.
+    $form["support_clean_markup"] = array(
+      "value" => "<p><b>Clean URLs:</b> This server <u>does not support</u> clean URLs.  If you are using an Apache-compatible server,
+                  make sure that your .htaccess file is properly configured.  For more information, see: http://getflightpath.com/node/5.</p>",
+                  
+    );
+  }
+  
+    
+  $form["theme"] = array(
+    "type" => "textfield",
+    "label" => t("Theme location:"),
+    "value" => variable_get("theme", "themes/classic"),
+    "description" => t("Enter the file location for your theme. Do not put preceeding or trailing slashes.  Ex: themes/classic"),    
+  );
+    
+
+  $form["school_initials"] = array(
+    "type" => "textfield",
+    "size" => 20,
+    "label" => t("School initials:"),
+    "value" => variable_get("school_initials", "DEMO"),
+    "description" => t("Ex: ULM or BPCC"),    
+  );
+                  
+
+  $form["earliest_catalog_year"] = array(
+    "type" => "textfield",
+    "size" => 20,
+    "label" => t("Earliest catalog year:"),
+    "value" => variable_get("earliest_catalog_year", "2006"),
+    "description" => t("This is the earliest possible catalog year FlightPath may look 
+                up.  Typically, this is the earliest year for which you have 
+                data (ie, when FlightPath went online.
+                If FlightPath cannot figure out a catalog year to use,
+                it will default to this one. Ex: 2006"),    
+  );
+  
+
+  $form["graduate_level_course_num"] = array(
+    "type" => "textfield",
+    "size" => 20,
+    "label" => t("Graduate level course num:"),
+    "value" => variable_get("graduate_level_course_num", "5000"),
+    "description" => t("This is the course num which means 'graduate level', meaning
+                anything above it is considered a graduate level course. Ex: 5000"),    
+  );
+  
+
+  $form["allowed_student_ranks"] = array(
+    "type" => "textfield",
+    "label" => t("Allowed student ranks (CSV):"),
+    "value" => variable_get("allowed_student_ranks", ""),
+    "description" => t("This is a list of which student ranks are allowed into FlightPath.
+                It should be separated by commas.
+                This also affects which students you may search for on the Advisees
+                tab. Ex: FR, SO, JR, SR"),
+  );
+
+
+  $form["not_allowed_student_message"] = array(
+    "type" => "textarea",
+    "label" => t("Not allowed student message:"),
+    "value" => variable_get("not_allowed_student_message", ""),
+    "description" => t("When a student is NOT allowed into FlightPath because of their
+                rank, this message will be displayed."),    
+  );
+    
+
+  $form["hiding_grades_message"] = array(
+    "type" => "textarea",
+    "label" => t("Hiding grades message:"),
+    "value" => variable_get("hiding_grades_message", ""),
+    "description" => t("This message will be displayed when any course on the page
+                has its bool_hide_grade set to TRUE.  If you are not using
+                this functionality, you can leave this blank."),    
+  );
+
+
+  $form["notify_apply_draft_changes_email_address"] = array(
+    "type" => "textfield",
+    "label" => t("Notify apply draft changes email address:"),
+    "value" => variable_get("notify_apply_draft_changes_email_address", ""),
+    "description" => t("Enter 1 or more email addresses (separated by comma) to notify when
+                draft changes are applied from the admin console.  
+                Leave blank to disable."),    
+  );
+
+  $form["notify_mysql_error_email_address"] = array(
+    "type" => "textfield",
+    "label" => t("Notify MySQL error email address:"),
+    "value" => variable_get("notify_mysql_error_email_address", ""),
+    "description" => t("Enter 1 or more email addresses (separated by comma) to notify when
+                a mysql error occurs.  
+                Leave blank to disable."),    
+  );
+    
+  $form["admin_transfer_passcode"] = array(
+    "type" => "textfield",
+    "label" => t("Admin Apply Draft password:"),
+    "value" => variable_get("admin_transfer_passcode", "changeMe"),
+    "description" => t("Enter a password which an admin user must enter
+                        in order to apply draft changes to FlightPath.
+                        This is an added security measure. Ex: p@ssWord569w"),    
+  );
+    
+
+  $options = array(
+              "90" => "90 days",
+              "180" => "180 days",
+              "365" => "1 year (365 days)",
+              "548" => "1.5 years (548 days)",
+              "730" => "2 years (730 days)",
+              "912" => "2.5 years (912 days)",
+              "never" => t("Never - Do not trim log table"),
+              );
+              
+              
+  
+  $form["max_watchdog_age"] = array(
+    "type" => "select",
+    "label" => t("Max watchdog (log) entry age:"),
+    "hide_please_select" => TRUE,
+    "options" => $options,
+    "value" => variable_get("max_watchdog_age", "548"),
+    "description" => t("Keep entries in the watchdog log tables until they are this old.
+                        Entries older than this will be deleted at every cron run.
+                        For example, if you only want to keep log entries for 1 year, then
+                        set this to 1 year.
+                        <b>Warning:</b> the Stats module uses data in this table to create
+                        statistics and reports about use of FlightPath.  Once data is removed from the
+                        watchdog table, it cannot be retrieved again.
+                        <br>If you are unsure what to put here, select '1.5 years'."),
+  );
+  
+                                  
+                  
+  
+                
+                
+  
+  return $form;
+}
+
+
+
+
+/**
+ *  Extra submit handler for the system_settings_form
+ * 
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function system_settings_form_submit($form, &$form_state) {
+    
+  
+  // Left empty for now.
+  
+
+}
+
+
+
+/**
+ * Implementation of hook_cron
+ * 
+ * We will perform operations necessary for keep FlightPath's tables in shape.
+ *
+ */
+function system_cron() {
+  
+  // Should we "trim" the watchdog table of old entries?
+  $max_age_days = variable_get("max_watchdog_age", "548");
+  if ($max_age_days != "never" && ($max_age_days*1) > 0) {
+    
+    // Okay, let's trim the table.
+    $max_timestamp = strtotime("$max_age_days DAYS AGO");
+    
+    db_query("DELETE FROM watchdog WHERE `timestamp` < '?' ", $max_timestamp);
+    $rows = db_affected_rows();
+    if ($rows > 0) {
+      watchdog("system", t("@rows old rows (older than @max days) trimmed from watchdog table on system cron run.", array("@rows" => $rows, "@max" => $max_age_days)));
+    }
+    
+  }
+  
+  
+  
+}
+
+
+
+/**
+ * Intercepts form submissions from System Settings Forms.
+ */
+function system_handle_form_submit() {
+    
+  $callback = $_REQUEST["callback"];
+  
+  $form_type = $_REQUEST["form_type"];
+  $form_include = $_REQUEST["form_include"];
+  
+  $form_token = $_REQUEST["form_token"];
+  // Make sure the form_token is valid!
+  if ($form_token != md5($callback . fp_token())) {
+    die(t("Sorry, but you have encountered an error.  A form submission was flagged
+          as possibly being an invalid or forged submission.  This may constitute a bug
+          in the system.  Please report this error to your Systems Administrator."));
+  }
+  
+  if ($form_include != "") {
+    // This is a file we need to include in order to complete the submission process.
+    include_once($form_include);
+  }
+
+    
+  // We need to make sure the user has permission to submit this form!
+  $form_path = $_REQUEST["form_path"];
+  // Check the menu router table for whatever the permissions were for this
+  // path, if any.
+  if ($form_path != "") {
+    $router_item = menu_get_item($form_path) ;
+    if (!menu_check_user_access($router_item)) {
+      // The user does NOT have access to submit this form!  The fact that
+      // it has made it this far means this may be some sort of hacking attempt.
+      die(t("Sorry, but you have encountered an error.  A form submission was flagged
+          as possibly being an invalid or having insufficient permissions to submit.  
+          This may constitute a bug in the system.  
+          Please report this error to your Systems Administrator."));
+      
+    }
+  }  
+     
+  // Let's get our set of allowed values, by looking at the original form,
+  // and grab what's in the POST which matches the name.
+
+  $values = array();
+  if (function_exists($callback)) {
+    $form = fp_get_form($callback);
+    foreach ($form as $name => $element) {     
+
+      $values[$name] = $_POST[$name];
+      // Do we need to alter the value from the POST?
+      
+      // If this is a checkbox, and we have any value in the POST, it should
+      // be saved as boolean TRUE
+      if ($element["type"] == "checkbox") {
+        if (isset($_POST[$name]) && $_POST[$name] === "1") {
+          $values[$name] = TRUE;          
+        }        
+      }
+
+    }
+  }  
+
+  // Does the form have any defined submit_handler's?  If not, let's assign it the
+  // default of callback_submit().    
+  $submit_handlers = $form["#submit_handlers"];
+  if (!is_array($submit_handlers)) $submit_handlers = array();
+  
+  // If the submit_handlers is empty, then add our default submit handler.  We don't
+  // want to do this if the user went out of their way to enter a different handler.
+  if (count($submit_handlers) == 0) {
+    array_push($submit_handlers, $callback . "_submit");
+  } 
+  
+  // Does the form have any defined validate_handler's?  This works exactly like the submit handler.
+  $validate_handlers = $form["#validate_handlers"];
+  if (!is_array($validate_handlers)) $validate_handlers = array();
+  
+  if (count($validate_handlers) == 0) {
+    array_push($validate_handlers, $callback . "_validate");
+  } 
+    
+  // Let's store our values in the SESSION in case we need them later on.
+  // But only if this is NOT a system_settings form!
+  if ($form_type != "system_settings") {
+    $_SESSION["fp_form_submissions"][$callback]["values"] = $values;
+  }
+
+  $form_state = array("values" => $values);
+
+  // Let's pass this through our default form validator (mainly to check for required fields
+  // which do not have values entered)
+  form_basic_validate($form, $form_state);  
+
+  if (!form_has_errors()) {
+    // Let's now pass it through all of our custom validators, if there are any.
+    foreach ($validate_handlers as $validate_callback) {         
+      if (function_exists($validate_callback)) {
+        
+        call_user_func_array($validate_callback, array(&$form, &$form_state));        
+      }
+    }
+  }
+
+  if (!form_has_errors()) {
+    // No errors from the validate, so let's continue.
+ 
+    // Is this a "system settings" form, or a normal form?
+    if ($form_type == "system_settings") {
+      // This is system settings, so let's save all of our values to the variables table.
+      // Write our values array to our variable table.
+      foreach ($form_state["values"] as $name => $val) {
+        
+        variable_set($name, $val);
+      }
+           
+      fp_add_message("Settings saved successfully.");      
+      
+    }
+
+    // Let's go through the form's submit handlers now.
+    foreach ($submit_handlers as $submit_callback) {                
+      if (function_exists($submit_callback)) {
+        //call_user_func($submit_callback, $form, &$form_state);        
+        call_user_func_array($submit_callback, array(&$form, &$form_state));
+      }    
+    }
+
+    
+    
+  }
+
+  // Figure out where we are supposed to redirect the user.
+  $redirect_path = $redirect_query = "";
+
+  if (is_array($form["#redirect"])) { 
+    $redirect_path = $form["#redirect"]["path"];
+    $redirect_query = $form["#redirect"]["query"];    
+  }
+  else {
+    $redirect_path = $_REQUEST["default_redirect_path"];
+    $redirect_query = $_REQUEST["default_redirect_query"];
+  }
+  
+  
+  // If there is a Batch process we need to do, do it here instead of the fp_goto.
+  if (isset($_SESSION["fp_batch_id"]) && function_exists("batch_menu")) {
+    $batch_id = $_SESSION["fp_batch_id"];
+    unset($_SESSION["fp_batch_id"]);
+    batch_start_batch_from_form_submit($batch_id, $redirect_path, $redirect_query);
+    return;
+  }
+  else if (isset($_SESSION["fp_batch_id"]) && !function_exists("batch_menu")) {
+    // We requested a batch action, but the batch module is not installed.
+    fp_add_message(t("A batch process was attempted, but it appears that the Batch module is not enabled.  Please contact your FlightPath administrator."), "error");
+    unset($_SESSION["fp_batch_id"]);
+  }
+  
+  // Okay, go back to where we were!  
+  fp_goto($redirect_path, $redirect_query);
+   
+}
+
+
+function system_handle_logout() {
+  global $user;
+  
+  $name = $user->name;
+  $uid = $user->id;
+  
+  // Check for hook_user_logout
+  $modules = modules_implement_hook("user_logout");
+  foreach($modules as $module) {
+    call_user_func($module . '_user_logout');
+  }
+
+  // Finish up logging out. 
+  
+  $_SESSION["fp_logged_in"] = FALSE;
+  $_SESSION["fp_user_object"] = FALSE;
+  session_destroy();
+  session_start();
+  
+  watchdog("logout", "@user has logged out", array("@user" => "$name ($uid)"));
+  
+  fp_add_message(t("You have been logged out of FlightPath."));
+  fp_goto("<front>");
+  
+}
+
+/**
+ * This function will clear our various caches by calling
+ * on the hook_clear_cache in each module.
+ */
+function system_perform_clear_cache() {
+    
+  fp_clear_cache();
+  
+  fp_goto("<front>");
+  
+}
+
+
+/**
+ * Called from menu, will run hook_cron() for all modules.
+ */
+function system_perform_run_cron() {
+  invoke_hook("cron");
+  fp_add_message(t("Cron run completed successfully."));
+  variable_set("cron_last_run", time());
+  fp_goto("admin-tools/admin");
+}
+
+/**
+ * This page displayes the results of each module's hook_status.
+ * 
+ */
+function system_display_status_page() {
+  $rtn = "";
+  
+  fp_add_css(fp_get_module_path("system") . "/css/style.css");
+  
+  $status_array = invoke_hook("status");  // get everyone's hook_status.
+  
+  $rtn .= "<p>" . t("This page will show you important status messages
+                     about FlightPath.  For example, what modules (if any) have
+                     an update available.") . "</p>";
+
+  $rtn .= "<table width='100%' border='1' class='status-table' cellpadding='4'>
+            <tr class='header-row'>
+              <th width='10%' class='package-header'>" . t("Package") . "</th>
+              <th>" . t("Status") . "</th>
+            </tr>";
+  foreach ($status_array as $module => $details) {
+    $pol = ($pol == "even") ? "odd" : "even";
+    
+    if ($details["severity"] == "") $details["severity"] = "normal";
+    
+    $rtn .= "<tr class='status-row status-row-$pol'>
+              <td valign='top' class='module-name'>$module</td>
+              <td valign='top' class='module-status module-status-" . $details["severity"] . "'>
+              " . $details["status"] . "
+              </td>
+    
+           </tr>";
+  }
+                  
+  $rtn .= "</table>";
+    
+  
+  
+  return $rtn;
+}
+
+
+/**
+ * Implementation of hook_status
+ * Expected return is array(
+ *                          "severity" => "normal" or "warning" or "alert",
+ *                          "status" => "A message to display to the user.",
+ *                    );
+ */
+function system_status() {
+  $rtn = array();
+  $rtn["severity"] = "normal";
+  // Check on the last time cron was run; make sure it's working properly.
+  $last_run = variable_get("cron_last_run", 0);
+  
+  // Report on current details about FlightPath.
+  $rtn["status"] .= "<p>" . t("FlightPath version:") . " " . FLIGHTPATH_CORE . "-" . FLIGHTPATH_VERSION . "</p>";
+  
+  if ($last_run < strtotime("-2 DAY")) {
+    $rtn["severity"] = "alert";
+    $rtn["status"] .= t("Cron hasn't run in over 2 days.  For your installation of FlightPath
+               to function properly, cron.php must be accessed routinely. At least once per day is recommended.");    
+  }
+  else {
+    $rtn["status"] .= t("Cron was last run on %date", array("%date" => format_date($last_run)));
+  } 
+  
+  $rtn["status"] .= "<p style='font-size: 0.8em;'>" . t("Your site's cron URL is:");
+  $rtn["status"] .= "<br>&nbsp; &nbsp; <i>" . $GLOBALS["fp_system_settings"]["base_url"] . "/cron.php?t=" . $GLOBALS["fp_system_settings"]["cron_security_token"] . "</i>
+                        <br>" . t("Example linux cron command:") . "&nbsp; <i>wget -O - -q -t 1 http://ABOVE_URL</i>";  
+  $rtn["status"] .= "</p>";
+  
+  
+  return $rtn;
+  
+}
+
+
+
+/**
+ * Implements hook_clear_cache
+ * Take care of clearing caches managed by this module
+ */
+function system_clear_cache() {
+  
+  menu_rebuild_cache();
+
+  system_rebuild_css_js_query_string();
+}
+
+
+/**
+ * This function will recreate the dummy query string we add to the end of css and js files.
+ *
+ */
+function system_rebuild_css_js_query_string() {
+  
+  // A dummy query string gets added to the URLs for css and javascript files,
+  // to give us control over browser caching.  When this value changes (cause we
+  // cleared the cache, updated a module, etc) it tells the browser to get a new
+  // copy of our css and js files.  
+  
+  // This idea, like many other ideas in FlightPath, was borrowed from Drupal.
+  
+  // The timestamp is converted to base 36 in order to make it more compact.
+  // This gives us a random-looking string of 6 numbers and letters.
+  variable_set('css_js_query_string', base_convert(time(), 10, 36));
+
+   
+}
+
+
+
+/**
+ * Clears only the menu cache
+ */
+function system_perform_clear_menu_cache() {
+  menu_rebuild_cache();
+  fp_goto("admin-tools/admin");
+}
+
+
+
+/**
+ * Display the "login" page.  This is the default page displayed
+ * to the user, at /login, if they have not logged in yet.
+ *
+ * This page is meant to be displayed in conjunction with blocks, so the user can
+ * easily define their own messages and such.
+ * 
+ * @return unknown
+ */
+function system_display_login_page() {
+  $rtn = "";
+  
+  fp_add_css(fp_get_module_path("system") . "/css/style.css");  
+
+  
+  $top_blocks = blocks_render_blocks("system_login", "top");
+  $bottom_blocks = blocks_render_blocks("system_login", "bottom");
+  $left_col_blocks = blocks_render_blocks("system_login", "left_col");
+  $right_col_blocks = blocks_render_blocks("system_login", "right_col");
+  
+  
+  $rtn .= "<noscript>
+            <div style='padding: 5px; background-color: red; color: white; font-size: 12pt; font-weight: bold;'>
+            " . t("FlightPath requires JavaScript to be enabled in order to
+            function correctly.  Please enable JavaScript on your browser
+            before continuing.") . "</div>
+          </noscript>";
+  
+  
+  $w1 = 300;
+  if (fp_screen_is_mobile()) $w1 = "90%";
+  
+  $login_box = fp_render_curved_line("Please login below...");
+  $login_box .= fp_render_form("system_login_form");
+  
+ 
+  if (fp_screen_is_mobile()) {
+    // the user is viewing this on a mobile device, so make it look
+    // a bit nicer.
+    $rtn .= $top_blocks . $left_col_blocks . $right_col_blocks . $bottom_blocks;    
+  }
+  else {
+    // This is NOT mobile, this is a regular desktop browser.
+    $rtn .= "
+        $top_blocks
+      <table border='0'>
+      <tr>
+       <td valign='top' width='40%'>
+        $left_col_blocks
+       </td>
+      <td valign='top' style='padding-left: 20px;'>
+        $right_col_blocks  
+       </td>
+      </tr>
+     </table>
+     $bottom_blocks
+     ";
+  }
+  
+  
+  return $rtn;
+}
+
+
+
+
+/**
+ * This draws the form which facilitates logins.
+ */
+function system_login_form() {
+  $form = array();
+  
+  fp_set_title("");
+  
+  $form["user"] = array(
+    "label" => t("User:"),
+    "type" => "textfield",
+    "size" => 30,
+    "required" => TRUE,
+  );
+  
+  $form["password"] = array(
+    "label" => t("Password:"),
+    "type" => "password",
+    "size" => 30,
+    "required" => TRUE,
+  );
+  
+  $form["submit"] = array(
+    "type" => "submit",
+    "value" => t("Login"),
+  );
+    
+  $form["#attributes"] = array("onSubmit" => "showUpdate(true);");    
+    
+  
+  return $form;
+}
+
+
+/**
+ * Validate function for the login form.
+ * This is where we will do all of the lookups to verify username
+ * and password.  If you want to write your own login handler (like for LDAP)
+ * this is the function you would duplicate in a custom module, then use hook_form_alter
+ * to make your function be the validator, not this one.
+ * 
+ * We will simply verify the password, then let the submit handler take over from there.
+ */
+function system_login_form_validate($form, &$form_state) {
+  $user = $form_state["values"]["user"];
+  $password = $form_state["values"]["password"];
+  
+  // If the GRANT_FULL_ACCESS is turned on, skip trying to validate
+  if ($GLOBALS["fp_system_settings"]["GRANT_FULL_ACCESS"] == TRUE) {
+    $user = "admin";
+    $form_state["passed_authentication"] = TRUE;
+    $form_state["db_row"]["user_id"] = 1;
+    $form_state["db_row"]["user_name"] = "FULL ACCESS USER";
+    return;
+  }  
+
+  // Otherwise, check the table normally.  
+  // Check the user's password is valid.
+  $res = db_query("SELECT * FROM users WHERE user_name = '?' AND password = '?' AND is_disabled = '0' ", $user, md5($password));
+  if (db_num_rows($res) == 0) {
+    form_error("password", t("Sorry, but that username and password combination could not
+                            be found.  Please check your spelling and try again."));
+    return;    
+  }
+  
+  $cur = db_fetch_array($res);
+  $form_state["db_row"] = $cur;
+  
+  // If we made it here, then the user successfully authenticated.
+  $form_state["passed_authentication"] = TRUE;
+
+  // It will now proceed to the submit handler.  
+}
+
+
+/**
+ * Submit handler for login form.
+ * If we are here, it probably means we have indeed authenticated.  Just in case, we will
+ * test the form_state["passed_authentication"] value, which we expect to have been
+ * set in our validate handler.
+ * 
+ * We will now proceed to actually log the user into the system.
+ * 
+ */
+function system_login_form_submit($form, &$form_state) {
+  $user = $form_state["values"]["user"];
+  $password = $form_state["value"]["password"];
+  $passed = $form_state["passed_authentication"];
+  $db_row = $form_state["db_row"];
+  
+  if (!$passed) {
+    fp_add_message(t("Sorry, there has been an error while trying to authenticate the user."));
+    return;
+  }
+
+    
+  $_SESSION["fp_logged_in"] = TRUE;
+      
+    
+  // Set up a new $account object.
+  $account = new stdClass();
+  
+  $account = fp_load_user($db_row["user_id"]);
+  // Okay, let's look for all the modules who have implimented hook_user_login
+  $modules = modules_implement_hook("user_login");
+  foreach ($modules as $module) {
+     call_user_func_array($module . '_user_login', array(&$account));        
+  }
+  
+  // Set the $account to the SESSION.
+  $_SESSION["fp_user_object"] = $account;
+  
+  watchdog("login", "@user has logged in. CWID: @cwid", array("@user" => "$account->name ($account->id)", "@cwid" => $account->cwid));
+  
+  fp_goto("<front>");
+  
+}
+
+
+
+
+/**
+ * Display the "main" tab-page for FlightPath.  Displays announcements
+ * as well as the Tools menu, and the "special administrative tools" menu.
+ */
+function system_display_main_page() {
+  global $user;
+  $rtn = "";
+
+  // If we are not logged in, then we need to re-direct the user to 
+  // the login page!
+  if ($_SESSION["fp_logged_in"] != TRUE) {
+    fp_goto("login");
+    return;  
+  }
+
+  $rtn .= "<table class='fp-semester-table'>";
+  
+  fp_add_css(fp_get_module_path("system") . "/css/style.css");
+  
+  
+  $left_col_blocks = blocks_render_blocks("system_main", "left_col");
+  $right_col_blocks = blocks_render_blocks("system_main", "right_col");
+  
+  if (fp_screen_is_mobile()) {
+    $rtn .= "<tr><td colspan='2'>$left_col_blocks $right_col_blocks</td></tr>";
+  }
+  else {
+    $rtn .= "<tr><td width='50%' valign='top'  style='padding-right: 10px;'>
+              $left_col_blocks
+              </td><td width='50%' valign='top' style='padding-left: 10px;'>
+                    $right_col_blocks
+              </td></tr>";
+  }
+  
+  $rtn .= "</table>";
+  
+  $rtn .= "<form id='mainform' method='POST'>
+      <input type='hidden' id='scrollTop'>
+      <input type='hidden' id='performAction' name='performAction'>
+      <input type='hidden' id='advisingWhatIf' name='advisingWhatIf'>
+      <input type='hidden' id='currentStudentID' name='currentStudentID'>
+      </form>";
+
+  //$pC .= $screen->get_javascript_code();
+
+
+/*
+  $screen->page_content = $pC;
+  $screen->page_has_search = true;
+  if ($_SESSION["fp_user_type"] == "student" || $_SESSION["fp_can_advise"] == false)
+  {
+    $screen->page_has_search = false;
+  }
+  $screen->build_system_tabs(0);
+
+ */
+
+  //////////////////////////////////////////////////////////
+  // To cut down on how long it takes to load huge groups
+  // like Free Electives, we will pre-load some of the course inventory here.
+  if ($_SESSION["fp_cached_inventory_flag_one"] != true)
+  {
+    $load_number = $GLOBALS["fp_system_settings"]["load_course_inventory_on_login_number"];
+    if ($load_number > 1) {
+      $fp = new FlightPath();
+      $fp->cache_course_inventory(0,$load_number);
+      $_SESSION["fp_cached_inventory_flag_one"] = true;
+    }
+  }
+
+
+  // send to the browser
+  //$screen->output_to_browser();
+  
+  return $rtn;
+  
+}
+
+
+function system_blocks() {
+  return array(
+    "tools" => t("Tools menu"),
+    "admin_tools" => t("Admin Tools menu"),
+    "login_form" => t("Login form"),
+  );
+}
+
+
+function system_render_block($delta) {
+  $block = array();
+
+  if ($delta == "tools") {
+    $block["title"] = t("Tools");
+    $block["body"] = fp_render_menu_block("", "tools");
+  }
+  
+  if ($delta == "admin_tools") {
+    $block["title"] = t("Administrative Tools");
+    $block["body"] = fp_render_menu_block("", "admin-tools");
+  }
+  
+  if ($delta == "login_form") {
+    $block["title"] = t("Please log in below...");
+    $block["body"] = fp_render_form("system_login_form");
+  }
+  
+  
+  // We don't want empty blocks to show up at all.
+  if ($block["body"] == "") {
+    return FALSE;
+  }
+  
+  
+  return $block;
+}
+
+
+
+
+
+
+/**
+ * Called on every page load.
+ */
+function system_init() {
+  // Let's see if the $user object (for the logged-in user) has been set up.
+  global $user;
+  $user = new stdClass();
+      
+  if ($_SESSION["fp_logged_in"] == TRUE) {
+    // Make sure it doesn't have the anonymous user role (rid == 1).
+    if ($_SESSION["fp_user_object"]->roles[1] == "anonymous user") {
+      unset($_SESSION["fp_user_object"]->roles[1]);
+    }
+    
+    $user = $_SESSION["fp_user_object"];
+    // To make sure we pick up the user's newest permissions, re-load 
+    // the user here.
+    
+    $user = fp_load_user($user->id);
+    
+    
+  }
+  else {
+    // User is anonymous, so set it up as such.
+    $user = fp_load_user(0);    
+  }
+  
+  // Are we in maintenance mode?  If so, display a message.
+  if (variable_get("maintenance_mode", FALSE)) {
+    fp_add_message(t("FlightPath is currently undergoing routine maintenance.  
+                      During this time, some data may appear incomplete.
+                      We apologize for the inconvenience and appreciate your patience."), "status", TRUE);
+  }
+   
+  // Is there an urgent message to display?  
+  $urgent_msg = variable_get("urgent_msg", "");
+  if ($urgent_msg) {
+    fp_add_message("<b>" . t("Important Message:") . "</b> " . $urgent_msg, "status", TRUE);
+  }
+  
+  
+   
+  // Add in our custom JS settings.
+  fp_add_js(array("themeLocation" => fp_theme_location(), "currentStudentId" => $_REQUEST["current_student_id"], "basePath" => base_path()), "setting");
+  fp_add_js(fp_get_module_path("system") . "/js/system.js");
+     
+}
+
+
+
+/**
+ * This is the form which an admin may use to manage the modules
+ * in the system.
+ */
+function system_modules_form() {
+  $form = array();
+  
+  fp_add_css(fp_get_module_path("system") . "/css/style.css");
+  
+  $form["mark" . $m++] = array(
+    "value" => t("Use this form to enable or disable modules.  This scans the /modules/ and then /custom/modules/
+                  directories.") . " 
+                  " . l(t("Run DB updates?"), "admin/db-updates") . "<br><br>",
+  );
+  
+  
+  // Begin by scanning the /modules/ directory.  Anything in there
+  // cannot be disabled.
+  $module_dirs = array();
+  $module_dirs[] = array("start" => "modules", "type" => t("Core"));
+  $module_dirs[] = array("start" => "custom/modules", "type" => t("Custom"));
+    
+  foreach ($module_dirs as $module_dir) {
+    $start_dir = $module_dir["start"];
+     
+    if ($dh = opendir($start_dir)) {
+      //$pC .= "<div class='fp-system-modules-type'>{$module_dir["type"]}</div>
+      //        <table class='fp-system-modules-table' cellpadding='0' cellspacing='0'>";
+              
+      $form["mark" . $m++] = array(
+        "value" => "<div class='fp-system-modules-type'>{$module_dir["type"]}</div>
+                    <table class='fp-system-modules-table' cellpadding='0' cellspacing='0'>",
+      );
+              
+      $pol = "even";
+      $dir_files = scandir($start_dir);      
+      foreach ($dir_files as $file) {    
+        if ($file == "." || $file == "..") continue;
+        
+        if (is_dir($start_dir . "/" . $file)) {  
+         
+          // Okay, now look inside and see if there is a .info file.
+          if (file_exists("$start_dir/$file/$file.info")) {
+            $module = $file;
+            $info_contents = file_get_contents("$start_dir/$file/$file.info");
+              
+            //fpm($info_contents);  
+            // From the info_contents variable, split up and place into an array.
+            $info_details_array = array();
+            $lines = explode("\n", $info_contents);
+            foreach ($lines as $line) {
+              if (trim($line) == "") continue;
+              $temp = explode("=", trim($line));
+              $info_details_array[trim($temp[0])] = trim(substr($line, strlen($temp[0]) + 1)); 
+            }
+            
+            
+            $path = "$start_dir/$file";
+            
+            $info_details_array["path"] = $path;
+            $info_details_array["module"] = $module;
+            
+            //fpm($info_details_array);            
+            // Expected keys:
+            // name, description, version, core, requires (csv), requred (true or false)
+            $checked = "";
+
+            $form["mark" . $m++] = array(
+              "value" => "<tr class='fp-system-modules-row fp-system-modules-row-$pol'>
+                            <td width='35%'>",
+            );
+                        
+            // the Checkbox.            
+            // Should it be checked?  We can check the modules table to see if it's enabled/installed or not.
+            $installation_status = "";
+            $default_value = array();
+            $res = db_query("SELECT * FROM modules WHERE path = '?' ", $path);
+            $cur = db_fetch_array($res);
+            $info_details_array["enabled"] = $cur["enabled"];
+            if ($cur["enabled"] == "1") {
+              // Yes, it is checked!
+              $default_value = array($module => $module);              
+            }
+            else if ($cur["enabled"] == "") {
+              $installation_status = t("not installed");
+            }
+            else if ($cur["enabled"] == "0") {
+              $installation_status = fp_get_js_confirm_link(t("Are you sure you wish to uninstall @module?\\nThis may remove saved data belonging to the module.", array("@module" => $module)), 
+                                                            ' window.location="' . fp_url("system/uninstall-module", "module=$module&path=" . urlencode($path) . "") . '"; ', t("uninstall?")); 
+            }
+            
+            
+            // Does this module need to run db updates?
+            if ($cur["enabled"] == "1" && $cur["schema"] != $info_details_array["schema"] && $info_details_array["schema"] != "") {
+              $installation_status = "<b>" . l(t("Run db updates"), "admin/db-updates") . "</b>";
+              
+              // Let's also make sure to enable a message at the top of the screen, letting the user
+              // know that there are needed updates.
+              fp_add_message("<b>" . t("Note:") . "</b> " . t("There are modules which have been updated.  Please back up your database,
+                                then run the DB Updates function below as soon as possible."), "error", TRUE); 
+            }
+            
+            
+            
+                        
+            $attributes = array();
+            if ($info_details_array["required"]) {
+              // This is a required module; it cannot be unchecked.
+              $attributes["disabled"] = "disabled";
+            }
+            
+            $bool_overriding = FALSE;
+            // Did this module already exist in $form?  In other words,
+            // is the module overriding a core module?  If so, we need to know
+            // so we can display something special.
+            if (isset($form["cb__$module"])) {
+              $bool_overriding = TRUE;
+            }
+            
+            $requires = "";
+
+            // If this module requires a higher core version of FlightPath than what we
+            // are running, disable and explain to the user.
+            if (FLIGHTPATH_VERSION != '%FP_VERSION%' && $info_details_array["requires core version"]) {
+              // Test to see if the current version is >= to the required core version.
+              if (version_compare(FLIGHTPATH_VERSION, $info_details_array["requires core version"], "<")) {
+                // No, it's LESS than the required version!  We shouldn't be able to use this module!
+                $attributes["disabled"] = "disabled";
+                $requires .= "<div style='color: red;'>" . t("This module requires
+                                          that you run FlightPath version %fpv or higher.  
+                                          You are instead running version %fpov.  Please update
+                                          your core copy of FlightPath before attempting to install this
+                                          module.", array('%fpv' => $info_details_array["requires core version"],
+                                                          '%fpov' => FLIGHTPATH_VERSION)) . "</div>";
+              }
+            }
+                       
+                       
+            
+            $form["cb__$module"] = array(
+              "type" => "checkboxes",              
+              "options" => array($module => $info_details_array["name"]),
+              "value" => $default_value,
+              "suffix" => "<div class='fp-system-modules-machine-name'>$file</div>
+                            <div class='fp-system-modules-installation-status'>$installation_status</div>
+                            ",
+              "attributes" => $attributes,
+            ); 
+            
+            // hidden variable containing the details about this module, for later use on submit.
+            $form["module_details__$module"] = array(
+              "type" => "hidden",
+              "value" => urlencode(serialize($info_details_array)),
+            );
+
+
+            
+            // Version & descr.            
+            if ($info_details_array["requires"] != "") {
+              $requires .= "<div class='fp-system-modules-requires hypo'>
+                            <b>" . t("Requires:") . "</b> {$info_details_array["requires"]}
+                           </div>";
+              
+            }
+            
+            // if we are overriding a module, then display something special.
+            if ($bool_overriding) {
+              $form["mark" . $m++] = array(
+                "value" => "<em>" . t("Overriding core module:") . "<br>{$info_details_array["name"]}</em>
+                            <div class='fp-system-modules-machine-name'>$file</div>
+                            <div class='fp-system-modules-installation-status'>
+                            " . t("Use checkbox in Core section above to manage module") . "
+                            </div>",
+              );
+            }
+            
+            $form["mark" . $m++] = array(
+              "value" => "  </td>
+                            <td width='5%' >{$info_details_array["version"]}</td>
+                            <td >{$info_details_array["description"]}$requires</td>
+                          </tr>
+                          ",
+                          
+            );
+                                          
+                                                     
+            $pol = ($pol == "even") ? "odd" : "even";
+            
+          } // if file_exists (xml file)        
+        } // if is_dir      
+      } // while file=readdir
+      
+      $form["mark" . $m++] = array(
+        "value" => "</table>",
+      );
+      
+    } // if opendir($startdir)
+  }// foreach moduledirs
+  
+  $form["submit"] = array(
+    "type" => "submit",
+    "value" => t("Submit"),
+    "prefix" => "<hr>",
+  );  
+  
+    
+  return $form;
+}
+
+
+/**
+ * Submit handler for the modules form. 
+ */
+function system_modules_form_submit($form, $form_state) {
+    
+  // Go through all of the checkboxes which we have "module_details" for.  If there is NOT a corresponding
+  // checkbox, it means it wasn't checked, and should be disabled in the database.  Otherwise, it means it WAS
+  // checked, and should be enabled/installed.
+  //fpm($form_state["values"]);
+  
+  $did_something = FALSE;
+  
+  foreach ($form_state["values"] as $key => $value) {
+    if (strstr($key, "module_details__")) {
+      if ($module_details = unserialize(urldecode($value))) {
+        
+        $module = $module_details["module"];
+        
+        // Disabling a module.
+        if ($module_details["enabled"] == "1" && !isset($form_state["values"]["cb__$module"])) {
+          // So it WAS enabled, but now the checkbox wasn't checked.  So disable it!
+          system_disable_module($module_details);
+          $did_something = TRUE;
+        }
+        
+        // Enabling a module
+        if ($module_details["enabled"] != "1" && isset($form_state["values"]["cb__$module"])) {
+          system_enable_module($module_details);
+          $did_something = TRUE;
+        }
+        
+      }
+    }
+  }
+
+  if ($did_something) {
+    
+    // Refetch all of the modules from the modules table.
+    fp_rebuild_modules_list();
+    
+    // We should clear the cache if we did something.
+    fp_clear_cache();
+    
+  }
+
+  
+}
+
+
+
+/**
+ * Called from the menu (ie, a URL) this function will uninstall a module.
+ * 
+ */
+function system_handle_uninstall_module() {
+  $module = $_REQUEST["module"];
+
+  // First, let's get information about this module from the db.
+  $res = db_query("SELECT * FROM modules WHERE name = '?' ", $module);
+  $cur = db_fetch_array($res);
+  // Make sure it is not currently enabled.
+  if ($cur["enabled"] == "1") {
+    fp_add_message(t("Module %module not yet disabled.  Disable first, then try to uninstall.", array("%module" => $module)));
+    return;
+  }
+  
+  // Let's see if we can call hook_uninstall for this module.
+  if (include_module($module, TRUE, $cur["path"])) {
+    if (include_module_install($module, $cur["path"])) {
+      if (function_exists($module . "_uninstall")) {
+        call_user_func($module . "_uninstall");
+      }
+    }
+  }
+  
+  // Remove from the database.
+  $res = db_query("DELETE FROM modules WHERE name = '?' ", $module);
+  
+  
+  fp_add_message(t("Uninstalled %module.", array("%module" => $module)));
+  
+  fp_goto("admin/config/modules");
+}
+
+
+/**
+ * Handles the enabling (and possible installation) of module.
+ */
+function system_enable_module($module_details) {
+
+  $module = $module_details["module"];
+  $path = $module_details["path"];
+
+  $bool_call_hook_install = FALSE;
+
+  // Do we need to attempt to call the hook_install function?
+  if ($module_details["enabled"] == "") {
+    // Wasn't in the database, so we need to install it.
+
+    // Add to our table.
+    // (delete anything all ready there first)      
+    $res = db_query("DELETE FROM modules WHERE name = '?' ", $module);
+    // Now, add back into the table.
+    $res = db_query("INSERT INTO modules (name, path, version, requires, enabled, type, `schema`, info)
+                     VALUES ('?', '?', '?', '?', '?', '?', '?', '?')
+                     ", $module, $path, $module_details["version"], $module_details["required"], "1", "module",
+                        $module_details["schema"], serialize($module_details));
+    
+    $bool_call_hook_install = TRUE;
+    
+    fp_add_message(t("The module %module has been installed.", array("%module" => $module)));
+         
+  }
+
+
+  // If the module has a .install file, begin by including it.
+  if (include_module_install($module, $path)) {
+      
+    // Include the original module file first.
+    include_module($module, TRUE, $path);
+
+         
+    if ($bool_call_hook_install) {
+      // call hook_install if it exists.
+      if (function_exists($module . '_install')) {
+        call_user_func($module . '_install');
+      }
+    }     
+
+    // Now, we can call hook_enable, if it exists.
+    if (function_exists($module . '_enable')) {
+      call_user_func($module . '_enable');
+    }
+       
+  }
+
+
+  // Update our table.
+  $res = db_query("UPDATE modules SET enabled = '1' WHERE name = '?' ", $module);    
+
+  fp_add_message(t("The module %module has been enabled.", array("%module" => $module)));
+
+ 
+  
+}
+
+
+/**
+ * Handles the disabling of the module in question.
+ */
+function system_disable_module($module_details) {
+
+  $module = $module_details["module"];
+  $path = $module_details["path"];
+
+  // This module cannot be disabled!
+  if ($module_details["required"] == TRUE) {
+    return;
+  }
+
+  // If the module has a "hook_disable" in it's path/module.install file, include and call it.  
+  if (include_module_install($module, $path) && function_exists($module . '_disable')) {
+    call_user_func($module . '_disable');
+  }
+  
+  // Disable it in the modules table.
+  $res = db_query("UPDATE modules
+                   SET enabled = '0'
+                   WHERE name = '?' ", $module);
+
+  fp_add_message(t("The module %module has been disabled.", array("%module" => $module)));  
+  
+}
+
+
+
+
+
+/**
+ * Construct an HTML element and return it.
+ *
+ */
+function system_build_element($name, $type = "", $label = "", $description = "", $default_value = "", $csv_to_array = FALSE) {
+  
+  $rtn = "";
+  
+  if (!$default_value) {
+    $default_value = $GLOBALS["fp_system_settings"][$name];
+  }
+  
+  if (is_array($default_value)) {
+    $default_value = @join(", ", $default_value);
+  }
+  
+  if (!$type) {
+    $type = "textfield";
+  }
+  
+  if (!$label) {
+    $label = $name;
+  }
+  
+  
+  if ($type == "textfield") {
+    $rtn .= "<div class='fp-system-settings-element fp-system-settings-textfield'>
+              <label>$label:</label>
+                <div class='fp-system-settings-input'>
+                  <input type='textfield' name='$name' value='$default_value'>
+                </div>
+              ";
+    if ($description) {
+      $rtn .= "<div class='fp-system-settings-element-description'>$description</div>";
+    }
+    $rtn .= "</div>";
+  }
+  
+  
+  if ($type == "textarea") {
+    $rtn .= "<div class='fp-system-settings-element fp-system-settings-textarea'>
+              <label>$label:</label>
+                <div class='fp-system-settings-input'>
+                  <textarea name='$name'>$default_value</textarea>
+                </div>
+              ";
+    if ($description) {
+      $rtn .= "<div class='fp-system-settings-element-description'>$description</div>";
+    }
+    $rtn .= "</div>";
+    
+  }
+  
+  if ($type == "boolean") {
+    $sel_f = $sel_t = "";
+    if ($default_value) {
+      $sel_t = "selected";
+    }    
+    $rtn .= "<div class='fp-system-settings-element fp-system-settings-boolean'>
+              <label>$label:</label>
+                <div class='fp-system-settings-input'>
+                  <select name='$name'>
+                    <option value='' $sel_f>FALSE</option>
+                    <option value='1' $sel_t>TRUE</option>
+                  </select>
+                </div>
+              ";
+    if ($description) {
+      $rtn .= "<div class='fp-system-settings-element-description'>$description</div>";
+    }
+    $rtn .= "</div>";
+    
+  }
+  
+  // We need to convert this CSV back into an array when we save it!
+  if ($csv_to_array) {
+    if (!isset($_SESSION["fp_system"]["csv_to_array"])) {
+      $_SESSION["fp_system"]["csv_to_array"] = array();
+    }
+    // Add to our list.
+    $_SESSION["fp_system"]["csv_to_array"][] = $name;
+  }
+  
+  
+  return $rtn;
+}

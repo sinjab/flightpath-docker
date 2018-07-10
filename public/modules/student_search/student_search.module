@@ -1,0 +1,854 @@
+<?php
+
+
+function student_search_menu() {
+  $items = array();
+  
+  
+  $items["admin/config/student-search-settings"] = array(
+    "title" => "Student Search settings",
+    "description" => "Configure settings for the Student Search function",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("student_search_settings_form", "system_settings"),
+    "access_arguments" => array("administer_student_search"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,      
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  );
+  
+  
+  $items["student-search"] = array(
+    "title" => t("Advisees"),
+    "page_callback" => "student_search_subtab_switchboard",
+    "access_arguments" => array("view_any_advising_session"),
+    "type" => MENU_TYPE_TAB,
+    "tab_family" => "system",
+    "page_settings" => array(
+      "page_has_search" => TRUE,
+    ),    
+    "weight" => 20,
+  );
+  
+  $items["student-search/my-advisees"] = array(
+    "title" => t("My Advisees"),
+    "page_callback" => "student_search_display_my_advisees",
+    "access_arguments" => array("display_my_advisees_subtab"),
+    "type" => MENU_TYPE_SUB_TAB, 
+    "tab_family" => "student_search",
+    "tab_parent" => "student-search",
+    "page_settings" => array (
+      "display_currently_advising" => TRUE,
+      "display_greeting" => TRUE,
+      "screen_mode" => "not_advising",
+      "page_has_search" => TRUE,
+    ), 
+    "weight" => 10,
+  );
+  
+  
+  
+  $items["student-search/my-majors"] = array(
+    "title" => t("My Majors"),
+    "page_callback" => "student_search_display_my_majors",
+    "access_arguments" => array("display_my_majors_subtab"),
+    "type" => MENU_TYPE_SUB_TAB,
+    "tab_family" => "student_search",
+    "tab_parent" => "student-search",
+    "page_settings" => array (
+      "display_currently_advising" => TRUE,
+      "display_greeting" => TRUE,
+      "screen_mode" => "not_advising",
+      "page_has_search" => TRUE,      
+    ),    
+    "weight" => 20,
+  );
+  
+
+  
+  $items["student-search/majors-search"] = array(
+    "title" => t("Majors"),
+    "page_callback" => "student_search_display_majors_search",
+    "access_arguments" => array("display_majors_subtab"),
+    "type" => MENU_TYPE_SUB_TAB,
+    "tab_family" => "student_search",
+    "tab_parent" => "student-search",
+    "page_settings" => array (
+      "display_currently_advising" => TRUE,
+      "display_greeting" => TRUE,
+      "screen_mode" => "not_advising",
+      "page_has_search" => TRUE,      
+    ),    
+    "weight" => 25,
+  );  
+  
+  
+    
+  $items["student-search/search"] = array(
+    "title" => t("Search"),
+    "page_callback" => "student_search_display_search",
+    "access_arguments" => array("display_search_subtab"),
+    "type" => MENU_TYPE_SUB_TAB,
+    "tab_family" => "student_search",
+    "tab_parent" => "student-search",
+    "page_settings" => array (
+        "display_currently_advising" => TRUE,
+        "display_greeting" => TRUE,
+        "screen_mode" => "not_advising",
+        "page_has_search" => TRUE,      
+    ),    
+    "weight" => 30,
+  );
+
+  
+  return $items;
+}
+
+
+
+/**
+ * This is a system_settings form for configuring our module.
+ *
+ */
+function student_search_settings_form() {
+  $form = array();
+  
+  
+  $form["student_search_major_search_cur_year"] = array(
+    "type" => "checkbox",
+    "label" => "Major search - Only show major choices from current catalog year?",    
+    "value" => variable_get("student_search_major_search_cur_year", FALSE),
+    "description" => t("If checked, the Majors tab will only allow selections of
+                        unexcluded degrees/majors in the current catalog year.
+                        If not sure what to do, leave this CHECKED."),
+  );
+  
+  
+  
+  $form["extra_student_search_conditions"] = array(
+    "type" => "textarea",
+    "label" => t("Extra student search conditions:"),
+    "value" => variable_get("extra_student_search_conditions", " AND is_active = 1 "),
+    "description" => t("This is mysql which will get appended to end of the WHERE clause of every query
+                    relating to searching for students.  It is so you can easily add global conditions, 
+                    especially if you are overriding the student_search module.  For example,
+                    to check that the students are admitted or enrolled.  <b>Probably not necessary</b> if you
+                    are not overriding the student_search module.  If you are unsure what to do, leave this set to default.
+                    <br>Default is:  AND is_active = 1 "),    
+  );
+    
+  
+  $form["enrolled_student_search_conditions"] = array(
+    "type" => "textarea",
+    "label" => t("Enrolled student search conditions:"),
+    "value" => variable_get("enrolled_student_search_conditions", " AND is_active = 1 "),
+    "description" => t("Similar to the one above it, this is a clause which will only bring up students
+                    who are enrolled at the university, and taking courses.  This might be identical to the
+                    one above it.  At the moment, this is only being used in the Stats module, and not
+                    for any logic in FlightPath, so you should consider it optional.
+                    <br>Default is:  AND is_active = 1 "),    
+  );
+
+  
+  
+  return $form;
+}
+
+
+
+
+/**
+ * The primary purpose of this function is to decide which
+ * "sub tab" function to send the user off to.  This is based
+ * on whatever their previous selection was.
+ */
+function student_search_subtab_switchboard() {
+  
+  $last_tab = $_SESSION["student_search_last_tab"];
+  if ($last_tab == "") $last_tab = 'search';
+  
+  
+  fp_goto("student-search/$last_tab");
+  
+}
+
+
+/**
+ * This is meant to be called directly from the theme template, to draw
+ * the small search box in the corner of the screen.
+ * 
+ * As such, we need to include any javascript we need here, rather than using
+ * fp_add_js.
+ */
+function student_search_render_small_search() {
+  global $current_student_id;
+  
+  $rtn = "";
+  
+  $url = fp_url("student-search/search");
+  
+  $rtn .= "<form action='" . $url . "' method='post' id='small-search-form'
+              style='padding:0; margin:0; padding-bottom: 5px;'>
+                     <input type='text' class='smallinput' size='30' name='search_for' id='search_bar_value'                       
+                        placeholder = '" . t("Search by name or CWID") . "'>
+                     <input type='submit' name='submit' value='=>' class='smallinput'>
+                     <input type='hidden' name='current_student_id' value='$current_student_id'>   
+                     <input type='hidden' name='did_search' value='true'>                  
+                    </form>
+                    ";
+ 
+  return $rtn;
+                      
+}
+
+
+
+/**
+ * Displays this user's advisees, if there are any assigned.
+ */
+function student_search_display_my_advisees() {
+  global $user;
+  $rtn = "";
+
+  $rtn .= student_search_get_advanced_search_tips();
+  
+  $_SESSION["student_search_last_tab"] = "my-advisees";
+  
+  $faculty_cwid = mysql_real_escape_string($user->cwid);
+        
+  
+  $query = "SELECT u.user_id, f_name, u.cwid, l_name, major_code, rank_code, a.catalog_year
+              FROM users u, students a, advisor_student c
+              WHERE 
+                 c.faculty_id = '$faculty_cwid'
+                 AND c.student_id = a.cwid
+                 AND u.cwid = a.cwid
+                 AND u.is_student = 1
+                 AND u.is_disabled = 0                 
+              AND rank_code IN %RANKIN%
+              %EXTRA_STUDENTSEARCH_CONDITIONS%
+              ORDER BY %ORDERBY%
+              ";
+
+  $adv_array = student_search_query_advisees($query);
+  $s = (count($adv_array) == 1) ? "" : "s"; 
+  $rtn .= student_search_render_advisees($adv_array, t("My Advisees Results") . " &nbsp; ( " . count($adv_array) . " " . t("student$s") . " )");
+
+  return $rtn;  
+}
+
+
+/**
+ * Implementation of hook_perm
+ *
+ * @return unknown
+ */
+function student_search_perm() {
+  return array(
+    "administer_student_search" => array(
+      "title" => t("Administer Student Search"),
+      "description" => t("Configure settings for the student search module."),
+    ),
+    "display_search_subtab" => array(
+      "title" => t("Display Search subtab"),
+      "description" => t("The user may view the Search subtab under the Advisees tab."),
+    ),
+    "display_my_advisees_subtab" => array(
+      "title" => t("Display My Advisees subtab"),
+      "description" => t("The user may view the My Advisees subtab under the Advisees tab."),
+    ),    
+    "display_my_majors_subtab" => array(
+      "title" => t("Display My Majors subtab"),
+      "description" => t("The user may view the My Majors subtab under the Advisees tab."),
+    ),    
+    "display_majors_subtab" => array(
+      "title" => t("Display Majors subtab"),
+      "description" => t("The user may view the Majors (search) subtab under the Advisees tab."),
+    ),        
+  );
+}
+
+
+
+/**
+ * Display the majors search sub-tab, where we can select a major and see the students
+ * assigned to it.
+ *
+ */
+function student_search_display_majors_search() {
+  global $user;
+  
+  $rtn = "";
+  
+  fp_add_css(fp_get_module_path("student_search") . "/css/student_search.css");
+  
+    
+  $_SESSION["student_search_last_tab"] = "majors-search";
+    
+  // Get the $major_code from the REQUEST, or from the user's saved settings.
+  $major_code = trim($_REQUEST["major_code"]);
+  if ($major_code == "") {
+    // Get from their settings
+    $major_code = db_get_user_setting($user->id, "major_search");
+  }
+  else {
+    // They did set something in the post. Save it to their settings.
+    db_set_user_setting($user->id, "major_search", $major_code);
+  }
+
+  $url = fp_url("student-search/majors-search");
+  
+  $rtn .= "<form method='POST' action='" . $url . "'
+              class='major-search-form'>            
+            <label>" . t("Select an available major from the list below:") . "</label>
+            <select name='major_code'>
+              <option value=''>- " . t("Please Select") . " -</option>
+              ";
+  
+  
+  // Do we have any extra settings for this search?
+  $current_catalog_year = mysql_real_escape_string(variable_get("current_catalog_year", 2006));
+  $cur_only = variable_get("student_search_major_search_cur_year", FALSE);
+  $extra_line = "";
+  if ($cur_only == TRUE) {
+    $extra_line = " AND catalog_year = '$current_catalog_year' ";
+  }
+  
+  
+  
+  $res = db_query("SELECT * FROM degrees
+                   WHERE exclude = '0'                   
+                   $extra_line
+                   GROUP BY major_code
+                   ORDER BY title
+                   ");
+  while ($cur = db_fetch_object($res)) {
+    $sel = ($major_code == $cur->major_code) ? "selected" : "";
+    
+    // Exclude major codes if they are "degree options", meaning, the code has an
+    // underscore in it.
+    if (strpos($cur->major_code, "_")) continue;
+    
+    // If the title is risking being too long, let's truncate it
+    $title = $cur->title;
+    $max_chars = 50;
+    if (strlen($title) > $max_chars) {
+      $title = trim(substr($title, 0, $max_chars)) . "...";
+    }
+    
+    $rtn .= "<option value='$cur->major_code' $sel>$title ($cur->major_code)</option>";
+  }
+  
+  
+  $rtn .= "
+            </select>
+            <input type='submit' value='" . t("Search") . "'>
+            </form>";        
+   
+
+   
+
+  $rtn .= student_search_get_advanced_search_tips();  
+  
+  /*
+  $query = "SELECT u.user_id, f_name, l_name, u.cwid, major_code, rank_code, a.catalog_year
+              FROM users u, students a
+              WHERE 
+                 substring_index(major_code, '|', 1) = '$major_code'
+                 AND u.cwid = a.cwid
+                 AND u.is_student = 1
+                 AND u.is_disabled = 0                 
+              AND rank_code IN %RANKIN%
+              %EXTRA_STUDENTSEARCH_CONDITIONS%
+              ORDER BY %ORDERBY%
+              ";
+  */
+  // Update the query to search for exact major code.
+  $major_code = mysql_real_escape_string($major_code);
+  $query = "SELECT u.user_id, f_name, l_name, u.cwid, major_code, rank_code, a.catalog_year
+              FROM users u, students a
+              WHERE 
+                 major_code = '$major_code'
+                 AND u.cwid = a.cwid
+                 AND u.is_student = 1
+                 AND u.is_disabled = 0                 
+              AND rank_code IN %RANKIN%
+              %EXTRA_STUDENTSEARCH_CONDITIONS%
+              ORDER BY %ORDERBY%
+              ";
+  
+  
+  
+  $adv_array = student_search_query_advisees($query);
+  $s = (count($adv_array) == 1) ? "" : "s"; 
+  $rtn .= student_search_render_advisees($adv_array, t("Major @major Results", array("@major" => $major_code)) . " &nbsp; ( " . count($adv_array) . " " . t("student$s") . " )");
+
+
+  
+  return $rtn;
+  
+  
+}
+
+
+
+/**
+ * Displays students belonging to the current user's major code.
+ */
+function student_search_display_my_majors() {
+  global $user;
+  $rtn = "";
+
+  
+  $rtn .= student_search_get_advanced_search_tips();
+  
+  $_SESSION["student_search_last_tab"] = "my-majors";
+    
+  // Figure out this user's major_code from the faculty table.
+  $db = get_global_database_handler();
+  $faculty_user_major_code = $db->get_faculty_major_code($user->cwid);
+    
+  $query = "SELECT u.user_id, f_name, l_name, u.cwid, major_code, rank_code, a.catalog_year
+              FROM users u, students a
+              WHERE 
+                 substring_index(major_code, '|', 1) = '$faculty_user_major_code'
+                 AND u.cwid = a.cwid
+                 AND u.is_student = 1
+                 AND u.is_disabled = 0                 
+              AND rank_code IN %RANKIN%
+              %EXTRA_STUDENTSEARCH_CONDITIONS%
+              ORDER BY %ORDERBY%
+              ";
+
+  $adv_array = student_search_query_advisees($query);
+  $s = (count($adv_array) == 1) ? "" : "s"; 
+  $rtn .= student_search_render_advisees($adv_array, t("Major @major Results", array("@major" => $faculty_user_major_code)) . " &nbsp; ( " . count($adv_array) . " " . t("student$s") . " )");
+
+
+  
+  return $rtn;
+}
+
+
+function student_search_display_search() {
+  $rtn = "";
+  
+  $_SESSION["student_search_last_tab"] = "search";
+
+  $url = fp_url("student-search/search");
+
+  $rtn .= "<table class='fp-semester-table'>
+           <form id='mainform' name='mainform' method='post'
+                action='" . $url . "' >
+           ";
+
+  
+
+
+  // Get search results from POST -or- past search attempts
+  // from the session.
+  $search_for = trim($_REQUEST["search_for"]);
+  if ($search_for == "") {
+    $search_for = trim($_SESSION["student_search_for"]);
+  }
+  
+  $o_search_for = $search_for;
+  
+
+  // If the user entered an asterisk with their search, we will
+  // skip the extra search conditions (and show more results).
+	$bool_bypass_extra_search_conditions = FALSE;
+	if (strstr($search_for, "*")) {
+	  $bool_bypass_extra_search_conditions = TRUE;
+	  $search_for = trim(str_replace("*", "", $search_for));
+	}
+  
+    
+  // remove trouble characters
+  $search_for = str_replace("'","",$search_for);
+  $search_for = str_replace('"','',$search_for);
+  $search_for = mysql_real_escape_string($search_for);
+
+  $isize = "25";
+  if ($screen->page_is_mobile) $isize = "10";
+  
+  $rtn .= "<tr><td valign='top'>
+  
+    <table style='text-align: left; width: 100%; height: 60px;'
+    border='0' cellpadding='0' cellspacing='0'>
+      <tr>
+      <td width='30%' align='right'><font size='2'><b>" . t("Search for advisees:") . "&nbsp;&nbsp;</b></td> 
+      <td width='30%'><input name='search_for' ID='input_search_for' TYPE='text' SIZE='$isize' value='$o_search_for'></font>
+              <input type='hidden' name='did_search' id='input_did_search' value='true'></td>
+      <td class='tenpt'>";
+  $rtn .= fp_render_button("Search","jQuery(\"#mainform\").submit();");
+  $rtn .= "</td><td width='1'>
+            </td></tr>
+            </table>";
+
+  
+  $rtn .= student_search_get_advanced_search_tips();
+  
+  
+  //Get my list of advisees...
+  // This time, we want to specify an SQL statement that will perform
+  // our search.
+
+  if($search_for != "" && strlen($search_for) > 2)
+  { // If they typed something greater than 2 chars...
+    
+    $search_action = " AND (u.cwid LIKE '%$search_for%' 
+                       OR l_name LIKE '%$search_for%' 
+                       OR f_name LIKE '%$search_for%') 
+                       ";
+    // If you searched for 2 things seperated by a space, it is likely you
+    // are searching for a name, so check that...
+    $_SESSION["student_search_for"] = $o_search_for;
+    $temp = explode(" ",$search_for);
+    if (trim($temp[1]) != "")
+    {
+      $fn = trim($temp[0]);
+      $ln = trim($temp[1]);
+      $search_action = " AND (l_name LIKE '%$ln%' 
+                         AND f_name LIKE '%$fn%') 
+                       ";
+      
+    }
+
+    $temp = explode("=",$search_for);
+    if (trim(strtolower($temp[0])) == "major")
+    {      
+      $mjsearch = trim($temp[1]);
+      $search_action = "";
+      $other_table = ", degrees b";
+      $group_by = " GROUP BY u.cwid ";
+      $major_search = " AND substring_index(a.major_code,'|',1) = b.major_code
+                        AND (b.major_code LIKE '%$mjsearch%' ) ";
+    }
+
+    
+    // Now THIS is odd... what is this strange piece of code here?
+    // I'm no cryptographic genius, but it looks like it is set to display a message when
+    // you search for "info=production" on the Advisees search tab...
+    if (md5(strtolower($temp[1]))=="fd89784e59c72499525556f80289b2c7"){$rtn .= base64_decode("DQo8cD4NCjxiPlRoZSBvcmlnaW5hbCBGbGlnaHRQYXRoIFByb2R1Y3Rpb24gVGVhbSwgY2lyY2EgMjAwNywgYXQgVGhlIFVuaXZlcnNpdHkgb2YgTG91aXNpYW5hIGF0IE1vbnJvZTo8L2I+DQo8dWw+DQo8bGk+UmljaGFyZCBQZWFjb2NrIC0gUHJvamVjdCBsZWFkIGFuZCBwcmltYXJ5IGxvZ2ljIHByb2dyYW1tZXIuPC9saT4NCjxsaT5Kb2UgTWFuc291ciAtIERhdGFiYXNlIGFkbWluaXN0cmF0b3IgYW5kIG1haW5mcmFtZS9CYW5uZXIgZGF0YSBjb29yZGluYXRvci48L2xpPg0KPGxpPkpvYW5uIFBlcnJlciAtIERhdGEgZW50cnksIHRlc3RpbmcgYW5kIHNvZnR3YXJlIGNvb3JkaW5hdG9yLjwvbGk+DQo8bGk+UGF1bCBHdWxsZXR0ZSAtIENsYXNzaWMgdGhlbWUgZGVzaWduZXIuPC9saT4NCjxsaT48Yj5PdGhlciBjb250cmlidXRpbmcgcHJvZ3JhbW1lcnM8L2I+OiBDaGFybGVzIEZyb3N0LCBCcmlhbiBUYXlsb3IuPC9saT4NCjwvdWw+DQpUbyBldmVyeW9uZSB3aG8gaGVscGVkIG1ha2UgRmxpZ2h0UGF0aCBwb3NzaWJsZTogVGhhbmsgWW91Lg0KPC9wPg==");}
+
+    $query = "SELECT u.user_id, f_name, l_name, u.cwid, a.major_code, rank_code, a.catalog_year
+              FROM users u, students a $other_table
+              WHERE 
+                 u.cwid = a.cwid
+                 AND u.is_student = 1
+                 AND u.is_disabled = 0                 
+                 $search_action
+              
+                 $major_search
+        ";
+    if (!$bool_bypass_extra_search_conditions) {
+      $query .= "
+              AND rank_code IN %RANKIN%
+              %EXTRA_STUDENTSEARCH_CONDITIONS%
+              ";
+    }    
+    
+    $query .= "
+              $group_by
+              ORDER BY %ORDERBY%
+              LIMIT 300
+              ";
+
+    $adv_array = student_search_query_advisees($query);
+  }
+
+  $s = (count($adv_array) == 1) ? "" : "s"; 
+
+  // Are we showing the maximum number of students?
+  if (count($adv_array) == 300) {
+    $rtn .= "<div class='student-search-max-results'><em>" . t("Showing maximum 300 results. Please narrow search criteria.") . "</em></div>";
+  }
+  
+  
+  
+  $rtn .= student_search_render_advisees($adv_array, t("Search Results") . " &nbsp; ( " . count($adv_array) . " " . t("student$s") . " )");
+  $rtn .= "</form>";
+  $rtn .= "</table>";
+
+  return $rtn;
+}
+
+
+/**
+ * Simply returns the HTML to display the "advanced search tips" collapsible fieldset
+ * and instructions.
+ *
+ */
+function student_search_get_advanced_search_tips() {
+  $rtn = "";
+  
+// Display advanced tips
+  $advanced_tips_html = "
+          <div class='student-search-advanced-tips'>            
+            " . t("FlightPath displays students who are currently enrolled or are newly admitted for
+            an upcoming term. Use the following tips to expand your search options:") . "
+            <ul>
+              <li>" . t("To search for inactive students, as well as active, add an asterisk (*)
+                  after your search.
+                  <br>&nbsp; &nbsp; &nbsp; 
+                        Ex:  <em>smith*</em> &nbsp; &nbsp; or &nbsp; &nbsp; <em>10035744*</em>") . "
+              </li>
+              <li>" . t("Search by major by typing major=CODE in the search box.
+                  <br>&nbsp; &nbsp; &nbsp; 
+                        Ex:  <em>major=ENGL</em>  &nbsp; &nbsp; or &nbsp; &nbsp;  <em>major=ENGL*</em>") . "
+              </li>
+            </ul>
+          </div>";
+  
+  
+  $rtn .= "<div class='student-search-advanced-tips-wrapper'>
+             <label>" . t("Can't find the student you're looking for?") . "</label>
+              " . fp_render_c_fieldset($advanced_tips_html, t("View advanced search tips"), TRUE) . "
+           </div>";      
+  
+  return $rtn;
+}
+
+
+function student_search_render_advisees($adv_array, $title) {
+  $rtn = "";
+  
+  
+  if (count($adv_array) == 1 && $_REQUEST["did_search"] == "true")
+  {
+    // Since there was only 1 result, we want to redirect this person directly.
+    // Draw this person's name...  
+    $student_id = $adv_array[0]["student_id"];
+    $first_name = $adv_array[0]["first_name"];
+    $last_name = $adv_array[0]["last_name"];
+    
+    $rtn .= "<div class='hypo' style='border: 1px solid black;
+              margin: 10px 0px 10px 0px; padding: 10px; 
+              font-size: 12pt; font-weight: bold;'>
+        " .t("Loading") . " <font color='blue'>$first_name $last_name</font> ($student_id).  
+          &nbsp; " . t("Please wait...") . "
+        </div>";
+    $bool_redirect_one = TRUE;
+  }
+  
+  
+  $rtn .= fp_render_curved_line($title);
+  
+  $rtn .= "<table width='100%' align='left'
+            border='0' cellpadding='0' cellspacing='0'>";
+
+  // Do not show headers at all if mobile
+  if (!fp_screen_is_mobile()) {
+   $rtn .= "
+      <td width='5%' valign='top'>&nbsp; </td>
+      <td width='12%' valign='top' class='tenpt'><b>" . t("CWID") . "</b></td>
+      <td width='15%' valign='top' class='tenpt'><b>" . t("First Name") . "</b></td>
+      <td width='20%' valign='top' class='tenpt'><b>" . t("Last Name")  . "</b></td>
+      <td width='15%' valign='top' class='tenpt'><b>" . t("Major Code") . "</b></td>
+      <td width='10%' valign='top' class='tenpt'><b>" . t("Rank") . "</b></td>
+      <td width='15%' valign='top' class='tenpt'><b>" . t("Catalog Year") . "</b></td>
+      ";
+  } 
+  
+  $rtn .= "
+    </tr>"; 
+
+  for ($t = 0; $t < count($adv_array); $t++)
+  {
+    $student_id = $adv_array[$t]["student_id"];
+    $first_name = $adv_array[$t]["first_name"];
+    $last_name = $adv_array[$t]["last_name"];
+    $major = $adv_array[$t]["major"];
+    $advising_what_if = $adv_array[$t]["advising_what_if"];
+    $what_if_major_code = $adv_array[$t]["what_if_major_code"];
+    $what_if_track_code = $adv_array[$t]["what_if_track_code"];
+    $degree_id = $adv_array[$t]["degree_id"];
+    $rank = $adv_array[$t]["rank"];
+    $catalog_year = $adv_array[$t]["catalog_year"];
+    if ($screen->page_is_mobile) {
+      $catalog_year = get_shorter_catalog_year_range($catalog_year, false, true);
+    }
+    $advising_session_id = $adv_array[$t]["advising_session_id"];
+    $advised_image = $adv_array[$t]["advised_image"];
+
+    $on_mouse = "onmouseover=\"style.backgroundColor='#FFFF99'\"
+               onmouseout=\"style.backgroundColor='white'\"
+                ";
+    if ($screen->page_is_mobile) $on_mouse = ""; // Causes problems on mobile devices.
+    
+    // Build up the URL we want to go to when we click this row.
+    $path = "view";
+    $advising_what_if = "no";
+    if ($what_if_major_code != "") {
+      $path = "what-if";
+      $advising_what_if = "yes";            
+    }
+    
+    // Add in the query part.
+    $query = "";
+    $query .= "advising_student_id=$student_id&current_student_id=$student_id&advising_major_code=$major&advising_what_if=$advising_what_if";
+    $query .= "&what_if_major_code=$what_if_major_code&what_if_track_code=$what_if_track_code&advising_load_active=yes&clear_session=yes";
+    
+    $url = fp_url($path, $query);
+
+    // old onCLick:
+    //<!-- onClick='selectStudent(\"$student_id\",\"$major\",\"$what_if_major_code\",\"$what_if_track_code\")' -->
+    
+    $rtn .= "
+      <tr height='19'>
+          <td colspan='7'>
+          <table border='0' 
+                  $on_mouse  
+                  onClick='showUpdate(true); window.location=\"$url\"; '                 
+                   width='100%' >
+                  <tr height='20'>
+                    <td width='5%' class='hand'>$advised_image</td>  
+                <td width='12%' class='hand'><font size='2'>$student_id</font></td>
+                  <td width='15%' class='hand'><font size='2'>$first_name </font></td>
+                <td width='20%' class='hand'><font size='2'>$last_name </font></td>    
+              <td width='15%' class='hand'><font size='2'>$major</td>
+                <td width='10%' class='hand'><font size='2'>$rank</td>
+                <td width='15%' class='hand'><font size='2'>$catalog_year</td>
+                 </tr>
+                  </table>   
+            </td> 
+         </tr>
+         ";
+  }
+
+
+  $rtn .= "</table>";
+  
+  
+  
+  if ($bool_redirect_one) {
+    // There was only one result, and it was a search, so we want to redirect
+    // this person.
+    // We will use the URL we created in the foreach loop above.  It will still contain exactly
+    // what we need.
+    $rtn .= "<script type='text/javascript'>
+        
+        $(document).ready(function() {
+          setTimeout('window.location=\"$url\";', 0);
+        });
+
+        </script>";
+    
+  }
+  
+  
+  
+  
+  // Required to make the changeTab function work...
+  $rtn .= "<form id='mainform' method='POST'>
+      <input type='hidden' id='scrollTop'>
+      <input type='hidden' id='performAction' name='performAction'>
+      <input type='hidden' id='advisingWhatIf' name='advisingWhatIf'>
+      <input type='hidden' id='currentStudentID' name='currentStudentID'>
+      <input type='hidden' id='advisingStudentID' name='advisingStudentID'>
+      <input type='hidden' id='advisingMajorCode' name='advisingMajorCode'>
+      <input type='hidden' id='whatIfMajorCode' name='whatIfMajorCode'>
+      <input type='hidden' id='whatIfTrackCode' name='whatIfTrackCode'>
+      <input type='hidden' id='advisingLoadActive' name='advisingLoadActive'>
+      <input type='hidden' id='clearSession' name='clearSession'>
+      </form>";
+
+    
+  return $rtn;
+}
+
+
+
+function student_search_query_advisees($sql) {
+  
+  $rank_in = "( '" . join("', '", csv_to_array($GLOBALS["fp_system_settings"]["allowed_student_ranks"])) . "' )";
+    
+  $order_by = " major_code, l_name, f_name ";
+  
+  // Replace the replacement portion with our derrived variables.
+  $sql = str_replace("%RANKIN%", $rank_in, $sql);
+  $sql = str_replace("%ORDERBY%", $order_by, $sql);
+  
+  // By default, the extra_studentsearch_conditions will be checking of is_active = 1.  But, the user may override this
+  // in the settings.
+  $extra_student_search_conditions = variable_get("extra_student_search_conditions", " AND is_active = 1 ");
+  
+  $sql = str_replace("%EXTRA_STUDENTSEARCH_CONDITIONS%", $extra_student_search_conditions, $sql);
+  
+  //fpm($sql);
+  // Returns an array of all of this teacher's advisees.
+  $rtn_array = array();
+  $r = 0;
+  
+  $result = db_query($sql);
+  while ($cur = db_fetch_array($result))
+  {
+
+    $student_id = trim($cur["cwid"]);
+    $rtn_array[$r]["student_id"] = $student_id;
+    $rtn_array[$r]["first_name"] = ucwords(strtolower($cur["f_name"]));
+    $rtn_array[$r]["last_name"] = ucwords(strtolower($cur["l_name"]));
+    $rtn_array[$r]["rank"] = $cur["rank_code"];
+    $rtn_array[$r]["catalog_year"] = $cur["catalog_year"];
+    $rtn_array[$r]["major"] = $cur["major_code"];
+    
+
+    // We should also mark if the student has been advised for this semester
+    // or not.
+  
+    // Get the current default advising term id.
+    $term_id = variable_get("advising_term_id", "");
+    
+    
+    $advised_image = "&nbsp;";
+    $advising_session_id = "";
+    $res2 = db_query("SELECT * FROM advising_sessions WHERE
+                      student_id = '?' AND
+                      term_id = '?' 
+               AND is_draft = '0' 
+              ORDER BY posted DESC", $student_id, $term_id);
+    if (db_num_rows($res2) > 0) {
+      $cur = db_fetch_array($res2);
+
+      $advised_image = "<img src='" . fp_theme_location() . "/images/small_check.gif' class='advisedImage'>";
+
+      if ($cur["is_whatif"] == "1")
+      { // Last advising was a What If advising.
+        $advised_image = "<span title='This student was last advised in What If mode.'><img src='" . fp_theme_location() . "/images/small_check.gif'><sup>wi</sup></span>";
+        $db_major = $cur["major_code"];
+        $temp = explode("\|_",$db_major);
+        $rtn_array[$r]["what_if_major_code"] = trim($temp[0]);
+        $rtn_array[$r]["what_if_track_code"] = trim($temp[1]);
+      }
+    }
+
+
+    $rtn_array[$r]["advising_session_id"] = $advising_session_id;
+    $rtn_array[$r]["advised_image"] = $advised_image;
+
+    $r++;
+  }
+
+
+  return $rtn_array;  
+}
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1590 @@
+<?php
+
+/**
+ * @file
+ * The administrative configurations for FlightPath.
+ * 
+ * 
+ */
+
+ 
+ 
+ 
+ 
+/**
+ * Implementation of hook_menu
+ * 
+ */
+function admin_menu() { 
+  $items = array();
+   
+  $items["admin-tools/admin"] = array(
+     "title" => "FlightPath Admin Console",
+     "page_callback" => "admin_display_main",
+     "access_arguments" => array("can_access_admin"),
+     "tab_family" => "admin",
+     "page_settings" => array(
+       "page_has_search" => FALSE,
+       "page_banner_is_link" => TRUE,
+       "page_hide_report_error" => TRUE,
+       "target" => "_blank",        
+     ),     
+     "type" => MENU_TYPE_TAB,
+  );
+  
+  $items["admin/config/urgent-message"] = array(
+    "title" => "Edit urgent message",
+    "description" => "Set a message which will be displayed to all users on every page",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_urgent_message_form", "system_settings"),
+    "access_arguments" => array("can_edit_urgent_message"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  );     
+  
+
+  
+  $items["admin/config/watchdog"] = array(
+    "title" => "Watchdog (logs)",
+    "description" => "View log messages from throughout the system",
+    "page_callback" => "admin_display_watchdog",    
+    "access_arguments" => array("display_watchdog"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_show_title" => TRUE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  );       
+
+
+
+  $items["admin/config/watchdog/%"] = array(
+    "title" => "View Watchdog Entry",    
+    "page_callback" => "admin_display_watchdog_entry",
+    "page_arguments" => array(3),    
+    "access_arguments" => array("display_watchdog"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_show_title" => TRUE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+        1 => array(
+          "text" => "Back to watchdog",
+          "path" => "admin/config/watchdog",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%&sev_filter=%SEV_FILTER%&page=%PAGE%&type_filter=%TYPE_FILTER%",
+        ),
+                
+      ),
+    ),    
+    "type" => MENU_TYPE_CALLBACK,
+    "tab_parent" => "admin-tools/admin",    
+  );      
+
+
+  
+  $items["admin/duplicate-year"] = array(
+    "title" => "Duplicate entire catalog year",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_duplicate_year_form"),
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",      
+  );
+  
+  
+  
+  $items["admin/edit-advising-settings"] = array(
+    "title" => "Edit advising settings",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_advising_settings_form", "system_settings"),
+    "access_arguments" => array("can_edit_advising_settings"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",    
+  );     
+  
+     
+  $items["admin/apply-draft-changes"] = array(
+    "title" => "Apply draft changes",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_apply_draft_changes_form"),
+    "access_arguments" => array("can_apply_draft_changes"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(         
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin-tools/admin",      
+  );
+   
+   ///////////////////////////////////////////////////////
+  ////////////////////// Degree Editing /////////////////// 
+   
+  $items["admin/degrees"] = array(
+    "title" => "Degrees",
+    "page_callback" => "admin_display_degrees",
+    "access_arguments" => array("can_access_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "file" => menu_get_module_path("admin") . "/admin.degrees.inc",
+    "type" => MENU_TYPE_TAB,
+    "tab_family" => "admin_degrees",
+  );
+   
+  $items["admin/degrees/edit-degree"] = array(
+    "title" => "Edit Degree",
+    "page_callback" => "admin_display_edit_degree",
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+        1 => array(
+          "text" => "Back to Degrees list",
+          "path" => "admin/degrees",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.degrees.inc",
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin/degrees",
+  );   
+   
+  $items["admin/degrees/handle-edit-degree-submit"] = array(    
+    "page_callback" => "admin_handle_edit_degree_submit",
+    "access_arguments" => array("can_edit_data_entry"),
+    "file" => menu_get_module_path("admin") . "/admin.degrees.inc",
+    "type" => MENU_TYPE_CALLBACK,
+  );      
+   
+
+  $items["admin/degrees/popup-add-group"] = array(
+    "title" => "Add Group",
+    "page_callback" => "admin_display_degrees_popup_add_group",
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_is_popup" => TRUE,
+      "page_hide_report_error" => TRUE,
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.degrees.inc",
+    "type" => MENU_TYPE_CALLBACK,
+  );     
+
+  
+  $items["admin/degrees/add-degree"] = array(
+    "title" => "Add Degree",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_add_degree_form"),
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+        1 => array(
+          "text" => "Back to Degrees list",
+          "path" => "admin/degrees",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.degrees.inc",
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin/degrees",    
+  );     
+  
+  $items["admin/degrees/copy-degree"] = array(
+    "title" => "Copy Degree",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_copy_degree_form"),
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+        1 => array(
+          "text" => "Back to Degrees list",
+          "path" => "admin/degrees",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.degrees.inc",
+    "type" => MENU_TYPE_CALLBACK,
+    "tab_parent" => "admin/degrees",
+  );     
+  
+
+
+   ///////////////////////////////////////////////////////
+  ////////////////////// Group Editing /////////////////// 
+   
+  $items["admin/groups"] = array(
+    "title" => "Groups",
+    "page_callback" => "admin_display_groups",
+    "access_arguments" => array("can_access_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "file" => menu_get_module_path("admin") . "/admin.groups.inc",
+    "type" => MENU_TYPE_TAB,
+    "tab_family" => "admin_groups",
+  );
+
+  $items["admin/groups/edit-group"] = array(
+    "title" => "Edit Group",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_edit_group_form"),
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+        1 => array(
+          "text" => "Back to Groups list",
+          "path" => "admin/groups",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.groups.inc",
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin/groups",
+  );     
+     
+     
+  $items["admin/groups/popup-select-icon"] = array(
+    "title" => "Select Icon",
+    "page_callback" => "admin_display_groups_popup_select_icon",
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_is_popup" => TRUE,
+      "page_hide_report_error" => TRUE,
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.groups.inc",
+    "type" => MENU_TYPE_CALLBACK,
+  );     
+     
+  $items["admin/groups/popup-edit-definition"] = array(
+    "title" => "Edit Definition",
+    "page_callback" => "admin_display_groups_popup_edit_definition",
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_is_popup" => TRUE,
+      "page_hide_report_error" => TRUE,
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.groups.inc",
+    "type" => MENU_TYPE_CALLBACK,
+  );     
+
+  $items["admin/groups/popup-show-group-use"] = array(
+    "title" => "Group Use",
+    "page_callback" => "admin_display_groups_popup_show_group_use",
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_is_popup" => TRUE,
+      "page_hide_report_error" => TRUE,
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.groups.inc",
+    "type" => MENU_TYPE_CALLBACK,
+  );     
+
+  $items["admin/groups/process-all-definitions"] = array(
+    "title" => "Process all Definitions",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_process_all_definitions_form"),
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+        1 => array(
+          "text" => "Back to Groups list",
+          "path" => "admin/groups",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.groups.inc",
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin/groups",
+  );     
+          
+     
+  /////////////////////////////////////////////////
+  /////////////////// Courses editing ////////////////
+  $items["admin/courses"] = array(
+    "title" => "Courses",
+    "page_callback" => "admin_display_courses",
+    "access_arguments" => array("can_access_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),    
+    "file" => menu_get_module_path("admin") . "/admin.courses.inc",
+    "type" => MENU_TYPE_TAB,
+    "tab_family" => "admin_courses",
+  );  
+     
+  $items["admin/courses/edit-course"] = array(
+    "title" => "Edit Course",
+    "page_callback" => "fp_render_form",
+    "page_arguments" => array("admin_edit_course_form"),
+    "access_arguments" => array("can_edit_data_entry"),
+    "page_settings" => array(
+      "page_has_search" => FALSE,
+      "page_banner_is_link" => TRUE,
+      "page_hide_report_error" => TRUE,
+      "menu_links" => array(
+        0 => array(
+          "text" => "Back to main menu",
+          "path" => "admin-tools/admin",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+        1 => array(
+          "text" => "Back to Courses list",
+          "path" => "admin/courses",
+          "query" => "de_catalog_year=%DE_CATALOG_YEAR%",
+        ),
+      ),
+    ),   
+    "file" => menu_get_module_path("admin") . "/admin.courses.inc",
+    "type" => MENU_TYPE_NORMAL_ITEM,
+    "tab_parent" => "admin/courses",
+  );     
+          
+          
+     
+     
+  return $items;
+}
+
+
+/**
+ * This form will allow the user to duplicate an entire year's worth of data to a new
+ * catalog year.
+ *
+ */
+function admin_duplicate_year_form() {
+  $form = array();
+  
+  $form["mark" . $m++] = array(
+    "value" => "<p>" . t("This form will allow you to duplicate an entire year's worth of data
+                 (courses, degrees, groups) into a new year.  This is used to create a new
+                 year of data, based on the previous year, for example. <b>It will completely
+                 delete the 'destination' year data, if it already exists!</b>  Use carefully.
+                 <br><br>
+                 The new year will be placed in DRAFT, and will not be visible in FlightPath
+                 until draft changes are applied.
+                 <br><br>
+                 <u>It would be wise</u> to back up your database before proceeding.") . "</p><hr>",
+  );
+  
+  $form["source_year"] = array(
+    "type" => "textfield",
+    "label" => t("Source year:"),
+    "size" => 10,
+    "required" => TRUE,
+    "description" => t("Enter the 4-digit source year you are copying FROM.  For example,
+                        2007.  If you are copying from '2007-2008' then just enter
+                        2007."),
+  );
+  
+  $form["destination_year"] = array(
+    "type" => "textfield",
+    "label" => t("Destination year:"),
+    "size" => 10,
+    "required" => TRUE,
+    "description" => t("Enter the 4-digit source year you are copying TO.  <b><u>If this year
+                        all ready exists in the system, all data for this year will be DELETED.</u></b>
+                        If you are copying to '2009-2010' then just enter
+                        2009."),
+  );  
+  
+ $form["passcode"] = array(
+    "type" => "password",
+    "label" => t("For added security, you must enter the Apply Draft Changes password:"),
+    "required" => TRUE,
+    "description" => t("This is a password set up in FlightPath's settings, to provide an extra layer
+                        of security for this powerful action.  Draft changes will not actually be applied,
+                        this is simply used as an added layer of security."),
+        
+  );
+  
+  $form["submit"] = array(
+    "type" => "submit",
+    "value" => t("Submit"),
+    "description" => t("This action may take several minutes to complete!  Click only ONCE!"),
+    "prefix" => "<hr>",
+  );  
+  
+  
+  
+  return $form;
+}
+
+
+/**
+ * This function should perform the actual copy of data!
+ *
+ * @param unknown_type $form
+ * @param unknown_type $form_state
+ */
+function admin_duplicate_year_form_submit($form, $form_state) {
+  $values = $form_state["values"];
+  
+  // Check to make sure they entered the transfer passcode correctly.
+  $db = get_global_database_handler();    
+  
+  if ($values["passcode"] != variable_get("admin_transfer_passcode", "h24897Ewujflnb7 wy2896432hke w490ukj")) {
+
+    form_error("passcode", t("Error!  The password you entered is not correct.  Check with the FlightPath administrator
+                              (or check the admin settings pages) to learn the password."));
+    return;
+    
+  }
+
+
+  // Okay, we made it this far, let's proceed with the copy!
+  $new_year = $values["destination_year"];
+  $old_year = $values["source_year"];
+  
+  
+  /////////////////////////////////////////////////////////////////////
+  // We must first begin by deleting any entries for the new_year
+  // from our tables.  This is because we may have to run the parser
+  // more than once while debugging and such.
+  $res = db_query("DELETE FROM draft_courses WHERE `catalog_year`='$new_year' ");
+  
+  
+  $res = db_query("DELETE FROM draft_degree_tracks WHERE `catalog_year`='$new_year' ");
+  // For degrees, we first need to select all of the new_year degrees.
+  $res = db_query("SELECT * FROM draft_degrees WHERE `catalog_year`='$new_year' ");
+  while ($cur = db_fetch_array($res)) {
+  	$res2 = db_query("DELETE FROM draft_degree_requirements WHERE `degree_id`='{$cur["degree_id"]}' ");
+  }
+  
+  $res = db_query("DELETE FROM draft_degrees WHERE `catalog_year`='$new_year' ");
+  // For groups, begin by selecting all the groups in that year...
+  $res = db_query("SELECT * FROM draft_groups WHERE `catalog_year`='$new_year' ");
+  while ($cur = db_fetch_array($res))
+  {
+  	// Now, select all the requirements and see if there are any sub groups...
+  	$res2 = db_query("SELECT * FROM draft_group_requirements WHERE `group_id`='{$cur["group_id"]}' ");
+  	while ($cur2 = db_fetch_array($res2))
+  	{
+  		if ($cur2["child_group_id"] > 0)
+  		{
+  			// Delete the child group.
+  			$res3 = db_query("DELETE FROM draft_group_requirements WHERE `group_id`='{$cur2["child_group_id"]}' ");
+  		}
+  	}
+  	// Now, delete the original requirement.
+  	$res3 = db_query("DELETE FROM draft_group_requirements WHERE `group_id`='{$cur["group_id"]}' ");
+  }
+  $res = db_query("DELETE FROM draft_groups WHERE `catalog_year`='$new_year' ");
+  //////////////////////////////////////////////////////////////////////////
+  
+  //  Okay, we have deleted any possible old entries for the new year.
+  
+  /////////////////////////////////////////////////////////////////////////
+  // Our first step is to copy all of the courses from the old_year to the new_year.  
+  $res = db_query("SELECT * FROM draft_courses WHERE `catalog_year`='$old_year' ");
+  while ($cur = db_fetch_array($res))
+  {
+  	extract($cur, 3, "db");
+  
+  	$course = new Course($db_course_id, false, $db, false, $old_year);
+  	$course->subject_id = $db_subject_id;
+  	$course->course_num = $db_course_num;
+  	$course->db_exclude = $db_exclude;
+  	
+  	// Now, duplicate it for the new_year.
+  	$db->duplicate_course_for_year($course, $new_year);
+  
+  
+  }
+   
+  
+  $group_id_array = array();
+  $subgroup_id_array = array();
+  //////////////////////////////////////////////////////////////////////////
+  //  Now, let's copy over the groups.  
+  $res = db_query("SELECT * FROM draft_groups WHERE `catalog_year`='$old_year' ");
+  while ($cur = db_fetch_array($res))
+  {
+  	extract($cur, 3, "db");
+  	// First, let's request a new group ID for this new group.
+  	$new_group_id = $db->request_new_group_id();
+  	$group_id_array[$db_group_id] = $new_group_id;
+  
+  	//$db_data_entry_comment = mysql_real_escape_string($db_data_entry_comment);
+  	// Now, let's insert this top-level group back into the table
+  	// as the new_year, with the new_group_id.
+  	$query = "INSERT INTO draft_groups(`group_id`,`group_name`,
+  							`title`,`definition`,`icon_filename`,`catalog_year`,
+  							`priority`,`delete_flag`,`data_entry_comment`)
+  							VALUES ('?','?','?','?','?','?','?','?','?') ";  	
+  	$res2 = db_query($query, $new_group_id,$db_group_name,$db_title,
+  								$db_definition,$db_icon_filename,$new_year,
+  								$db_priority,$db_delete_flag,$db_data_entry_comment);
+  
+  	// Okay, now we need to go through the requirements for the group, and copy
+  	// those over to the new_year.
+  	$res3 = db_query("SELECT * FROM draft_group_requirements
+  							WHERE `group_id`='$db_group_id' ");
+  	while($cur3 = db_fetch_array($res3))
+  	{
+  		extract($cur3, 3, "db3");
+  
+  		$child_group_id = 0;
+  		// Was there a child_group (a branch)?  If so, we need to copy that
+  		// over too, with a new child_group_id.
+  		if ($db3_child_group_id > 0)
+  		{
+  			// First, create the child group...
+  			$new_sub_group_id = $db->request_new_group_id();
+  			$subgroup_id_array[$db3_child_group_id] = $new_sub_group_id;
+  			$res4 = db_query("SELECT * FROM draft_group_requirements
+  							WHERE `group_id`='$db3_child_group_id' ");
+  			while($cur4 = db_fetch_array($res4))
+  			{
+  				extract($cur4, 3, "db4");
+  				$res5 = db_query("INSERT INTO draft_group_requirements
+  										(`group_id`,`course_id`,`course_min_grade`,
+  										`course_repeats`,`data_entry_value`)
+  										VALUES ('?','?','?','?','?') ",
+  				            $new_sub_group_id,$db4_course_id,
+  										$db4_course_min_grade,$db4_course_repeats,
+  										$db4_data_entry_value);
+  			}
+  			
+  			// Now, add the replace the db3_child_group_id with this new id
+  			// so it will get added as a requirement.
+  			$child_group_id = $new_sub_group_id;
+  		}
+  
+  		// Add the row into the table...
+  		$res5 = db_query("INSERT INTO draft_group_requirements
+  								(`group_id`,`course_id`,`course_min_grade`,
+  								`course_repeats`,`data_entry_value`,`child_group_id`)
+  								VALUES ('?','?','?','?','?','?') ",
+  		            $new_group_id,$db3_course_id,
+  								$db3_course_min_grade,$db3_course_repeats,
+  								$db3_data_entry_value,$child_group_id);
+  		
+  		
+  	}
+  }
+  
+  /////////////////////////////////////////////////////////////////////
+  //  Now, on to transfering the degrees.
+  //  We will have to use the groupIDArray we constructed earlier, which
+  //  looks like $arr[old_id] = new_id.
+  // Do the tracks first, since they are easier and straight forward...
+  $res = db_query("SELECT * FROM draft_degree_tracks WHERE `catalog_year`='$old_year' ");
+  while ($cur = db_fetch_array($res))
+  {
+  	extract($cur, 3, "db");
+  	
+  	$res2 = db_query("INSERT INTO draft_degree_tracks
+  						(`catalog_year`,`major_code`,`track_code`,`track_title`,
+  						`track_short_title`,`track_description`)
+  						VALUES
+  						('?','?','?','?','?','?') ",
+  	           $new_year,$db_major_code,$db_track_code,$db_track_title,
+  						$db_track_short_title,$db_track_description);
+  	
+  }
+  // Now, let's do the degrees themselves.
+  $res = db_query("SELECT * FROM draft_degrees WHERE `catalog_year`='$old_year' ");
+  while ($cur = db_fetch_array($res))
+  {
+  	extract($cur, 3, "db");
+  	
+  	$new_degree_id = $db->request_new_degree_id();
+  	// add in the top-level degree to the table.
+  	$res2 = db_query("INSERT INTO draft_degrees
+  						(`degree_id`,`major_code`,`degree_type`,`title`,
+  						 `semester_titles_csv`,`catalog_year`,`exclude`,`degree_class`,`public_note`)
+  						 VALUES
+  						('?','?','?','?','?','?','?','?','?')
+  						", $new_degree_id,$db_major_code,$db_degree_type,$db_title,
+  						 $db_semester_titles_csv,$new_year,$db_exclude, $db_degree_class, $db_public_note);						 
+  	
+  	// now, pull out all of the degree_requirements.
+  	$res3 = db_query("SELECT * FROM draft_degree_requirements
+  							WHERE `degree_id`='$db_degree_id' ");
+  	while($cur3 = db_fetch_array($res3))
+  	{
+  		extract($cur3, 3, "db3");
+  		// If there is a required group, we must convert it to the
+  		// new groupID !
+  		$required_group_id = $db3_group_id;
+  		if ($db3_group_id > 0)
+  		{
+  			$required_group_id = $group_id_array[$db3_group_id];
+  			if ($required_group_id < 1 || $required_group_id == "")
+  			{
+  				die("could not find group new group for $old_year $db3_group_id !");
+  			}
+  		}
+  		 
+  		
+  		$res4 = db_query("INSERT INTO draft_degree_requirements
+  							(`degree_id`,`semester_num`,`group_id`,`group_requirement_type`,
+  							`group_hours_required`,`group_min_grade`,`course_id`,
+  							`course_min_grade`,`course_requirement_type`,`data_entry_value`)
+  							VALUES
+  							('?','?','?','?','?','?','?','?','?','?')
+  							", $new_degree_id,$db3_semester_num,$required_group_id,$db3_group_requirement_type,
+  							$db3_group_hours_required,$db3_group_min_grade,$db3_course_id,
+  							$db3_course_min_grade,$db3_course_requirement_type,$db3_data_entry_value);
+  		
+  		
+  	}
+  	
+  	
+  }  
+    
+     
+  fp_add_message(t("The copy operation is now completed.  You may view the new year
+                    by using the Data Entry links on the admin main menu.  Remember, you must
+                    apply draft changes before they will be visible in FlightPath."));
+  
+  
+}
+
+
+
+/**
+ * This is a systems settings form, which lets
+ * the user edit advising variabled for FlightPath.
+ */
+function admin_advising_settings_form() {
+  $form = array();
+  
+  $settings = fp_get_system_settings();
+  
+  /*
+  $mark = "";
+  // TODO: This needs to become genericized!  If it can't be, it should just be taken out.
+    
+  $sems = array(40,41, 60,81,82);
+  for($t = $settings["current_catalog_year"]; $t <= $settings["current_catalog_year"] + 2; $t++) {
+    $mark .= "<div style='padding-left: 15px;'>";
+    foreach($sems as $sm) {
+      $try_year = $t . $sm;
+      $course = new Course();
+      $course->term_id = $try_year;
+      $mark .= "" . $course->get_term_description(true) . ": <b>$course->term_id</b>, &nbsp; &nbsp; &nbsp;";
+    }
+    $mark .= "</div>";
+  }  
+  
+    
+  $form["mark" . $m++] = array(
+    "type" => "markup",
+    "value" => t("Term ID Quick Reference:") . $mark,
+  );
+  */
+  
+  $form["available_advising_term_ids"] = array(
+    "type" => "textfield",
+    "label" => t("Available advising term id's"),
+    "value" => variable_get("available_advising_term_ids", ""),
+    "description" => t("These are the terms for which advisors may advise a student to take
+                        a course.  They should follow the structure established on the
+                        school data settings page.
+                        Separate term id's by commas. Ex: 200940, 200941, 200960. Make sure to enter
+                        in the order that they should appear in FlightPath."),
+  );  
+
+  $form["advising_term_id"] = array(
+    "type" => "textfield",
+    "label" => t("Default advising term id"),
+    "value" => variable_get("advising_term_id", ""),
+    "description" => t("Of the available term ids above, this is the default that FlightPath
+                        is set to when an advisor logs in. Ex: 200940."),
+  );  
+
+
+  $form["current_catalog_year"] = array(
+    "type" => "textfield",
+    "size" => 10,
+    "label" => t("Current catalog year"),
+    "value" => variable_get("current_catalog_year", ""),
+    "description" => t("This is the year which What If loads degrees from, as well as other important functions.
+                        Only change this once you have fully loaded a new catalog year."),
+  );  
+
+  $form["current_draft_catalog_year"] = array(
+    "type" => "textfield",
+    "size" => 10,
+    "label" => t("Current DRAFT catalog year"),
+    "value" => variable_get("current_draft_catalog_year", ""),
+    "description" => t("While in Draft mode, this is the year which Blank Degree Search loads degrees from.  What If
+                        mode will always use the Current catalog year, set above.
+                        You may change this while working on a new catalog.  It will not affect any other
+                        users of the system.  While not working on a new catalog, set this
+                        to the same as the Current catalog year."),
+  );  
+
+
+  $form["not_released_grades_terms"] = array(
+    "type" => "textfield",
+    "label" => t("NOT released grades terms"),
+    "value" => variable_get("not_released_grades_terms", ""),
+    "description" => t("Enter the term_id's, separated by commas, 
+                        which are NOT released and should NOT be visible to either advisors or students. 
+                        Coures in these terms will only show midterm grades or no grades at all. 
+                        Ex: 201240, 201240:S1") . "<br>" . t("If left blank, grades will be visible to 
+                        students and advisors as soon as they appear in the database."),
+  );  
+
+
+    
+  
+  return $form;
+}
+
+
+
+
+/**
+ * Convienence function to get semester's default regular name.
+ */
+function admin_get_semester_name($semester_num) {    
+  
+  $semester = new Semester($semester_num);
+  $title = $semester->title;
+  
+    
+  /**
+  $ar = array(t("Freshman Year"), t("Sophomore Year"), t("Junior Year"), t("Senior Year"));
+  $s = $ar[$semester_num];
+  if ($s == "")
+  {
+    $s = t("Year") . " " . ($semester_num + 1);
+  }
+  */
+  
+  return $title;
+}
+
+
+
+/**
+ * This form lets the user apply draft changes (if they can supply the passcode)
+ */
+function admin_apply_draft_changes_form() {
+  $form = array();
+  
+  $form["mark" . $m++] = array(
+    "type" => "markup",
+    "value" => t("You can use this form to apply your draft changes to the production database, making changes
+                  to degrees, courses, and groups visible to all users of the system."),
+  );
+  
+  $form["passcode"] = array(
+    "type" => "password",
+    "label" => t("For added security, you must enter the Apply Draft Changes password:"),
+    "required" => TRUE,
+    "description" => t("This is a password set up in FlightPath's settings, to provide an extra layer
+                        of security for this powerful action."),
+        
+  );
+  
+  $form["submit"] = array(
+    "type" => "submit",
+    "value" => t("Submit"),
+    "description" => t("This action may take several seconds to complete!  Click only ONCE!"),
+    "prefix" => "<hr>",
+  );
+  
+  
+    
+  return $form;
+}
+
+
+/**
+ * Handles the actual moving of draft courses into production.
+ */
+function admin_apply_draft_changes_form_submit($form, $form_submit) {
+  $values = $form_submit["values"];
+  
+  $db = get_global_database_handler();
+  $de_catalog_year = admin_get_de_catalog_year();
+  
+  // Check to make sure they entered the transfer passcode correctly.
+    
+  if ($values["passcode"] != variable_get("admin_transfer_passcode", "h24897Ewujflnb7 wy2896432hke w490ukj")) {
+
+    form_error("passcode", t("Error!  The password you entered is not correct.  Check with the FlightPath administrator
+                              (or check the admin settings pages) to learn the password."));
+    return;
+    
+  }
+   
+
+  // First, set maintenance mode...
+  variable_set("maintenance_mode", TRUE);
+  
+  // Okay, so what we gotta do is truncate the production tables,
+  // then copy the draft tables in.
+  $table_array = array(
+    "courses",
+    "degree_requirements",
+    "degree_tracks",
+    "degrees",
+    "group_requirements",
+    "groups",
+  );
+
+  foreach($table_array as $table_name) {
+    $draft_table_name = "draft_$table_name";
+    // First, truncate existing...
+    $query = "truncate table $table_name";
+    $res = db_query($query);
+    // Now, copy in draft changes...
+    $query = "INSERT INTO $table_name
+            SELECT * FROM $draft_table_name ";
+    $res = db_query($query);
+  }
+
+  $db2 = new DatabaseHandler();
+  // Now, we need to go through the draft_instructions table,
+  // and perform each instruction one at a time.
+  $res = db_query("SELECT * FROM draft_instructions
+            ORDER BY `id` ");
+  while($cur = db_fetch_array($res))
+  {
+    $instruction = trim($cur["instruction"]);
+
+    $temp = explode(",",$instruction);
+
+    if (trim($temp[0]) == "update_course_id") {
+      $db2->update_course_id(trim($temp[1]), trim($temp[2]));
+    }
+
+    if (trim($temp[0]) == "update_course_requirement_from_name") {
+      $db2->update_course_requirement_from_name(trim($temp[1]), trim($temp[2]), trim($temp[3]));
+    }
+  }
+
+  // Once this is done, truncate the draft_instructions table.
+  $res = db_query("TRUNCATE TABLE draft_instructions");
+
+
+  // And we are done!  Set maintenance mode back to none
+  variable_set("maintenance_mode", FALSE);
+
+  // Send emails to notify programmers...
+  $notify = variable_get("notify_apply_draft_changes_email_address", "");  
+  if ($notify != "") {
+    mail($notify, "FlightPath Apply Draft Changes", "Someone has applied draft changes to FlightPath, which updated degree plans, groups, and courses.");
+  }
+  
+  fp_add_message(t("Successfully updated the production database with draft changes.  Your changes are now live and visible on production for all users."));
+
+  watchdog("admin", "Draft changes applied.");
+ 
+  
+}
+
+
+
+
+/**
+ * Get the "de_catalog_year" from the REQUEST.
+ * If it's not there or invalid, pull it from our system settings.
+ */
+function admin_get_de_catalog_year($bool_set_earliest_if_blank = TRUE) {
+  
+  $settings = fp_get_system_settings();
+  $de_catalog_year = $_REQUEST["de_catalog_year"];
+  
+  if ($bool_set_earliest_if_blank) {
+    if (!$de_catalog_year || $de_catalog_year < $settings["earliest_catalog_year"]) {
+      $de_catalog_year = $settings["earliest_catalog_year"];
+    }
+  }
+  
+  return $de_catalog_year;  
+}
+
+
+/**
+ * This is an implementation of hook_menu_handle_replacement_pattern.
+ * It will search for and replace replacement patterns which we are aware of it in $str.
+ */
+function admin_menu_handle_replacement_pattern($str) {
+  
+  if (strpos($str, "%DE_CATALOG_YEAR%") !== 0) {
+    // It contains this replacement pattern!
+    $str = str_replace("%DE_CATALOG_YEAR%", admin_get_de_catalog_year(), $str);
+  }
+  
+  if (strpos($str, "%SEV_FILTER%") !== 0) {
+    // It contains this replacement pattern!
+    $str = str_replace("%SEV_FILTER%", $_GET["sev_filter"], $str);
+  }
+
+  if (strpos($str, "%TYPE_FILTER%") !== 0) {
+    // It contains this replacement pattern!
+    $str = str_replace("%TYPE_FILTER%", $_GET["type_filter"], $str);
+  }
+  
+  
+  if (strpos($str, "%PAGE%") !== 0) {
+    // It contains this replacement pattern!
+    $str = str_replace("%PAGE%", $_GET["page"], $str);
+  }
+    
+  
+  
+  return $str;
+}
+
+
+function admin_perm() {
+  return array(
+    "can_access_admin" => array(
+      "title" => t("Access administrative console"),
+      "description" => t("This is a powerful permission!  This allows a 
+                          user to access the 'admin console' for FlightPath."),
+    ),
+    "can_edit_urgent_message" => array(
+      "title" => t("Edit urgent message"),
+      "description" => t("The user may edit the 'Urgent Message' which appears at the top of every page, if set."),
+    ),    
+    "can_access_data_entry" => array(
+      "title" => t("Access Data Entry"),
+      "description" => t("The user can access (view) the data-entry portion of the admin console. Degree plans, groups, and courses."),
+    ),
+    "can_edit_data_entry" => array(
+      "title" => t("Edit Data Entry"),
+      "description" => t("This is a powerful permission! The user can edit degree plans, groups, and courses."),
+    ),
+    "can_view_advanced" => array(
+      "title" => t("View advanced"),
+      "description" => t("The user may see advanced information on-screen, for example, internal ID numbers for degrees and courses."),
+    ),   
+    "can_apply_draft_changes" => array(
+      "title" => t("Apply draft changes"),
+      "description" => t("The user may move draft changes into production."),
+    ),   
+    "can_edit_advising_settings" => array(
+      "title" => t("Edit advising settings"),
+      "description" => t("The user may edit advising settings, like available term IDs and the current catalog year."),
+    ),   
+    "display_watchdog" => array(
+      "title" => t("View watchdog (log) entries"),
+      "description" => t("The user may view the recent watchdog log entries.  This represents a security concern, so give this only to trusted users."),
+    ),   
+
+    
+            
+  );
+} 
+ 
+
+ 
+/**
+ * Meant to be fed into "fp_system_settings_form()", this function
+ * returns an array which will automatically save values to our "variables" table. 
+ */
+function admin_urgent_message_form() {
+  $form = array();
+
+  
+  $form["mark" . $m++] = array(
+    "type" => "markup",
+    "value" => "<p>" . t("Any message you enter here will be displayed at the top of every page in the system. 
+                  This is used to alert users that the system is about to be taken offline, or any other urgently-needed information.") . "</p>
+                  <p>" . t("To delete this message, simple delete all the text in the box and save.") . "</p>",
+  );
+  
+  $form["urgent_msg"] = array(
+    "type" => "textarea",
+    "label" => "Urgent message:",
+    "value" => variable_get("urgent_msg", ""),
+  );
+  
+  return $form;
+}
+ 
+  
+
+  
+  
+/**
+ * Display the details of a particular watchdog entry, specified by its table id.
+ */
+function admin_display_watchdog_entry($wid) {
+  $rtn = "";
+  
+  fp_add_css(fp_get_module_path("admin") . '/css/admin.css');
+  
+  
+  $severity_array = array(
+    5 => "notice",
+    1 => "alert",
+    3 => "error",
+    7 => "debug",
+  );
+  
+  $res = db_query("SELECT * FROM watchdog WHERE wid = '?' ", $wid);
+  $cur = db_fetch_object($res);
+  
+  $msg = t($cur->message, unserialize($cur->variables));
+  
+  $severity = $severity_array[$cur->severity];
+  $when = format_date($cur->timestamp, "short");
+    
+  // Display
+  $rtn .= "
+    <br>
+    <div class='watchdog-entry'>
+      <div class='watchdog-field'>
+        <label>ID:</label>
+        $cur->wid
+      </div>
+
+      <div class='watchdog-field'>
+        <label>Type:</label>
+        $cur->type
+      </div>
+      
+
+      <div class='watchdog-field'>
+        <label>Time:</label>
+        $when ($cur->timestamp)
+      </div>
+      
+      <div class='watchdog-field'>
+        <label>Severity:</label>
+        $severity
+      </div>
+
+      <div class='watchdog-field'>
+        <label>User:</label>
+        $cur->user_name | id: $cur->user_id | cwid: $cur->cwid | is_student: $cur->is_student | is_faculty: $cur->is_faculty
+      </div>
+      
+      <div class='watchdog-field'>
+        <label>IP:</label>
+        $cur->ip
+      </div>
+                              
+      <div class='watchdog-field'>
+        <label>Location:</label>
+        $cur->location
+      </div>
+                      
+      <div class='watchdog-field'>
+        <label>Ref:</label>
+        $cur->referer
+      </div>
+
+      <hr>
+      
+      <div class='watchdog-field'>
+        <label class='block'>Message:</label>
+        $msg
+      </div>
+      
+      <div class='watchdog-field'>
+        <label class='block'>Extra:</label>
+        $cur->extra_data
+      </div>      
+                                                            
+      
+    </div>
+  ";
+  
+  
+  
+  
+  return $rtn;
+}  
+  
+  
+
+
+/**
+ * Displays recent watchdog entries, from the watchdog table
+ *
+ */
+function admin_display_watchdog() {
+  
+  fp_add_css(fp_get_module_path("admin") . '/css/admin.css');
+  
+  $rtn = "";
+
+  $rtn .= "<p>View recent watchdog entries</p>";
+  
+  $severity_array = array(
+    5 => "notice",
+    1 => "alert",
+    3 => "error",
+    7 => "debug",
+  );
+  
+  $results_per_page = 50;
+  
+  
+  
+  $type_line = $severity_line = $limit_start = "";
+
+  $sev_filter = $_GET["sev_filter"];
+  $type_filter = $_GET["type_filter"];
+  $page = $_GET["page"];
+  
+  $limit_start = 0;
+  if ($page != "" && is_numeric($page)) {
+    $limit_start = $results_per_page * ($page - 1);
+  }
+  else {
+    $page = 1;
+  }
+
+  
+  
+  // Filters:
+  $rtn .= "<form method='GET' action='" . fp_url("admin/config/watchdog") . "' class='watchdog-filters'>
+            ";
+  
+  $rtn .= "Filter by:
+           <span class='type-filter'>
+            Type:
+            <select name='type_filter'>
+              <option value=''>-Any-</option>";
+  $res = db_query("SELECT distinct(type) as type FROM watchdog ORDER BY type");
+  while ($cur = db_fetch_object($res)) {
+    $sel = ($type_filter == $cur->type) ? "selected" : "";
+    $rtn .= "<option value='$cur->type' $sel>$cur->type</option>";
+  }  
+  
+  
+  $rtn .= "</select>
+            </span>";
+
+  
+  $rtn .= "
+            <span class='severity-filter'>
+            Severity:
+            <select name='sev_filter'>
+              <option value=''>-Any-</option>";
+  foreach ($severity_array as $key => $value) {
+    $sel = "";
+    if ($sev_filter == $key) $sel = "selected";
+     
+    $rtn .= "<option value='$key' $sel>$value</option>";
+  }  
+  
+  $rtn .= "</select>
+            </span>";
+  
+  
+  
+  
+  $rtn .= "<input type='submit' value='-&gt;'>";
+  // Hack if clean URLs are not enabled:
+  $rtn .= "<input type='hidden' name='q' value='admin/config/watchdog'>";
+  
+  $rtn .= "</form>";
+  
+  
+  if ($_GET["sev_filter"] != "") {
+    $severity_line = " AND severity = '" . mysql_real_escape_string($_GET["sev_filter"]) . "' ";
+  }
+  
+  if ($_GET["type_filter"] != "") {
+    $type_line = " AND type = '" . mysql_real_escape_string($_GET["type_filter"]) . "' ";
+  }
+
+  
+  $rtn .= "<table class='watchdog-table' cellspacing='0' cellpadding='4'>
+              <tr>
+                <th>ID</th>
+                <th>When</th>
+                <th>Type</th>
+                <th>Msg</th>
+                <th>User</th>
+              </tr>";
+  
+  // Okay, let's display the recent watchdog entries.
+  $query = "SELECT * FROM watchdog
+                   WHERE 1
+                   $type_line
+                   $severity_line
+                   ORDER BY wid DESC
+                   ";
+  $res = db_query($query . " LIMIT $limit_start, $results_per_page");
+  while ($cur = db_fetch_object($res)) {
+    $pol = ($pol == "even") ? "odd" : "even";
+    
+    $o_msg = t($cur->message, unserialize($cur->variables));
+    $o_type = $cur->type;
+    
+    // shorten msg if necessary
+    $msg = substr($o_msg, 0, 120);
+    if ($msg != $o_msg) {
+      $msg = trim($msg) . "...";
+    }
+    
+    $type = substr($o_type, 0, 15);
+    if ($type != $o_type) {
+      $type = trim($type) . "...";
+    }
+
+    
+    
+    $severity = $severity_array[$cur->severity];
+    $when = format_date($cur->timestamp, "short");
+    
+        
+    $rtn .= "
+              <tr class='row-$pol row-$severity'>                
+                <td valign='top'>" . l($cur->wid, "admin/config/watchdog/$cur->wid", "sev_filter=$sev_filter&type_filter=$type_filter&page=$page") . "</td>
+                <td valign='top'>$when</td>
+                <td valign='top'>$type</td>                
+                <td valign='top'>$msg</td>                
+                <td valign='top'>$cur->user_name</td>                
+              
+              </tr>    
+    
+            ";
+    
+  }
+  
+  
+  $rtn .= "</table>";
+  
+  // Now, do the page
+  
+  // Figure out the total number of results
+  $total = db_result(db_query("SELECT count(wid) as count
+                               FROM watchdog WHERE 1 $type_line $severity_line "));
+  
+  
+  // Now, divide by the number of results per page.
+  $pages = ceil($total / $results_per_page);
+
+  $base_query = "sev_filter=$sev_filter&type_filter=$type_filter";
+   
+  $rtn .= "<div class='fp-pager'>";
+  if ($page > 1) {
+    $rtn .= "<span class='pager-link pager-first'>" . l("&laquo; first", "admin/config/watchdog", $base_query . "&page=1") . "</span>";
+    $rtn .= "<span class='pager-link pager-prev'>" . l("&lt; prev", "admin/config/watchdog", $base_query . "&page=" . ($page - 1)) . "</span>";
+  }
+  else {
+    $rtn .= "<span class='pager-link pager-first'>&laquo; first</span>";
+    $rtn .= "<span class='pager-link pager-prev'>&lt; prev</span>";    
+  }
+   
+  // page numbers here
+  // Let's get the previous X page numbers, and next X (if possible)
+  $start_page_num = $page - 5;
+  if ($start_page_num < 1) $start_page_num = 1;
+  $end_page_num = $page + 5;
+  if ($end_page_num > $pages) $end_page_num = $pages;
+  
+  if ($start_page_num > 1) {
+    $rtn .= "<span class='pager-elip'>...</span>";
+  }
+  
+  for ($t = $start_page_num; $t <= $end_page_num; $t++) {
+    if ($page == $t) {
+      // current page
+      $rtn .= "<span class='pager-link pager-number pager-current'>$t</span>";      
+    }
+    else {
+      $rtn .= "<span class='pager-link pager-number'>" . l($t, "admin/config/watchdog", $base_query . "&page=$t") . "</span>";
+    }
+  } 
+
+  
+  if ($end_page_num < $pages) {
+    $rtn .= "<span class='pager-elip'>...</span>";
+  }
+  
+  
+   
+  if ($page < $pages) {
+    $rtn .= "<span class='pager-link pager-next'>" . l("next &gt;", "admin/config/watchdog", $base_query . "&page=" . ($page + 1)) . "</span>";
+    $rtn .= "<span class='pager-link pager-last'>" . l("last &raquo;", "admin/config/watchdog", $base_query . "&page=$pages") . "</span>";
+  }
+  else {
+    $rtn .= "<span class='pager-link pager-next'>next &gt;</span>";
+    $rtn .= "<span class='pager-link pager-last'>last &raquo;</span>";    
+  }
+  
+  $rtn .= "</div>";
+  
+  
+  
+  
+  return $rtn;
+  
+}
+
+
+
+
+
+
+
+
+
+/**
+ * This is the "main" page for the admin module.  It's what the user
+ * first sees when the click to go to the Admin page.
+ */
+function admin_display_main() {
+  $de_catalog_year = admin_get_de_catalog_year(FALSE);
+  
+  // Has the system cron been run recently?
+  $cron_last_run = variable_get("cron_last_run", 0);    
+  if ($cron_last_run < strtotime("-7 DAY")) {
+    // Warn admin that they need to have cron set up!  It's been over a week!
+    fpm(t("Your system's cron process hasn't run in over a week.  In order for FlightPath
+            to continue to function properly, a cron process much be configured.
+            You may @run_link or see the @status_link page for instructions.", 
+            array("@status_link" => l(t("System status"), "admin/config/status"),
+                  "@run_link" => l(t("run cron now"), "admin/config/run-cron"))));
+  }
+  
+  
+  $rtn = "";
+
+  fp_add_css(fp_get_module_path("admin") . "/css/admin.css");
+  fp_add_js(fp_get_module_path("admin") . "/js/admin.js");
+
+  $rtn .= "<h2>" . t("FlightPath Admin Console - Main Menu") . "</h2>";
+  $rtn .= "<table class='fp-semester-table' cellpadding='5'>
+           <tr>
+            <td valign='top' width='50%'>
+              " . fp_render_menu_block(t("System Configuration"), "admin/config") . "
+            </td>
+            <td valign='top' width='50%'>
+              ";
+              
+
+  // Advising Settings
+  $rtn .= fp_render_curved_line("Advising Settings");
+  $rtn .= "<div class='admin-advising-settings'>
+             
+       <ul>
+        <li>" . t("Available terms for advising: %v", array("%v" => variable_get("available_advising_term_ids", ""))) . "</li>
+        <li>" . t("Default advising term: %v", array("%v" => variable_get("advising_term_id", ""))) . "</li>          
+        <li>" . t("Current catalog year: %v", array("%v" => variable_get("current_catalog_year", ""))) . "</li>       
+        <li>" . t("Current draft catalog year: %v", array("%v" => variable_get("current_draft_catalog_year", ""))) . "</li>             
+        <li>" . t("Not released grades terms: %v", array("%v" => variable_get("not_released_grades_terms", ""))) . "</li>             
+        
+      </ul>";
+  
+  if (user_has_permission("can_edit_advising_settings")) {
+    $rtn .= l(t("Edit Advising Settings"), "admin/edit-advising-settings");
+  }
+  
+  $rtn .= "</div>";
+    
+
+                            
+              
+  $rtn .= "</td>
+                        
+           </tr>";
+  $rtn .= "</table><br>"; // close table
+
+
+  //$settings = fp_get_system_settings();
+  
+  $current_catalog_year = variable_get("current_catalog_year", 2006);
+  $earliest_catalog_year = variable_get("earliest_catalog_year", 2006);
+  
+  
+  if (user_has_permission("can_access_data_entry")) {
+    $rtn .= fp_render_curved_line("Data Entry");
+   
+    $rtn .= "<div class='data-entry-cats'>";
+
+    // Have a pulldown here of years, then use javascript to hide/show relavant groups.
+    $rtn .= "&nbsp; &nbsp; &nbsp; " . t("Select a catalog year") . ": <select id='data-entry-select-cats' onChange='adminHideDECats();'>";
+    $selected_cat = ($de_catalog_year != "") ? $de_catalog_year : $current_catalog_year;
+    
+    for ($t = $current_catalog_year +1; $t >= $earliest_catalog_year; $t--) {
+      $sel = ($t == $selected_cat) ? "selected" : "";
+      $rtn .= "<option value='$t' $sel>$t-" . ($t+1) . "</option>";
+    }
+    $rtn .= "</select>";
+    
+    for ($t = $current_catalog_year +1; $t >= $earliest_catalog_year; $t--) {
+      $rtn .= "<ul class='data-entry-for-cat data-entry-for-cat-$t'>";
+      $rtn .= "<li>" . l(t("Degree plans for @year", array("@year" => "$t-" . ($t+1))), "admin/degrees", "de_catalog_year=$t") . "</li>";
+      $rtn .= "<li>" . l(t("Groups for @year", array("@year" => "$t-" . ($t+1))), "admin/groups", "de_catalog_year=$t") . "</li>";
+      $rtn .= "<li>" . l(t("Courses for @year", array("@year" => "$t-" . ($t+1))), "admin/courses", "de_catalog_year=$t") . "</li>";
+      $rtn .= "</ul>";
+    }
+        
+    if (user_has_permission("can_edit_data_entry")) {
+      $rtn .= "<b>" . t("Administrator function:") . "</b><ul>
+              <li>" . l(t("Duplicate entire year worth of data to new year"), "admin/duplicate-year") . "</li>
+                </ul>";
+    }
+    
+    
+    $rtn .= "</div>";
+    
+    // Draft changes?
+    $res = db_query("SELECT * FROM draft_instructions");
+    if (db_num_rows($res) > 0) {
+      $rtn .= "<div class='draft-changes-waiting-msg'>
+                      " . t("Draft changes have been made which have yet to be applied.
+                      When you are ready for your draft changes to appear in
+                      production, click the link below.") . "</div>";
+    }
+    $rtn .= "<ul class='data-entry-draft-waiting'>
+              <li>" . l(t("Apply draft changes"), "admin/apply-draft-changes") . "</li>
+           </ul>";
+        
+  }
+
+  
+  
+  
+  
+  
+  
+  
+  
+    
+  return $rtn;
+}
+
+
+
+
